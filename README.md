@@ -39,6 +39,15 @@ All workloads in the lab run on Hypercore, either as virtual machines or workloa
 
 ### Virtual Machines
 
+**NGINX**
+Nginx is a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) that is configured through the following host paths (via container mounts):
+- nginx.conf: `/var/homelab/etc/nginx/nginx.conf`
+- html: `/var/homelab/etc/nginx/`
+
+It is running at port 80 on the host system (`-p 80:80`).
+
+### Virtual Machines
+
 All virtual machines in the lab have the following characteristics, expressed as a _**Kraken Manifest**_:
 - Ubuntu Server 24.04
 - Podman
