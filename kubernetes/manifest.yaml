@@ -1,0 +1,30 @@
+type: Application
+version: "1"
+metadata:
+  name: "talos-base-node"
+spec:
+  assets:
+    - name: talos_disk
+      type: virtual_disk
+      format: raw
+      url: "https://storage.googleapis.com/demo-bucket-lfm/talos-metal-amd64.raw"
+  resources:
+    - type: virdomain
+      name: "talos-base-node-template"
+      spec:
+        description: talos base with qemu agent
+        cpu: 0
+        memory: "4294967296"
+        machine_type: "uefi"
+        storage_devices:
+          - name: boot_disk
+            type: virtio_disk
+            source: talos_disk
+            boot: 1
+            capacity: 50000000000 # 50 GB
+        network_devices:
+          - name: eth0
+            type: virtio
+        tags:
+          - template
+        state: shutoff
