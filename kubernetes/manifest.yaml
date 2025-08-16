@@ -15,7 +15,7 @@ spec:
         description: talos base with qemu agent
         cpu: 0
         memory: "4294967296"
-        machine_type: "uefi"
+        machine_type: bios
         storage_devices:
           - name: boot_disk
             type: virtio_disk

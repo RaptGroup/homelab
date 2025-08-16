@@ -50,6 +50,23 @@ Nginx is a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-sys
 
 It is running at port 80 on the host system (`-p 80:80`), configured to perform TCP forwarding with TLS passthrough.
 
+## Kubernetes
+The Kubernetes cluster is based on Talos Linux. The cluster nodes are based on the Kraken manifest in `kubernetes/`. They must be configured with `talosctl`.
+
+> Note: These steps have already been performed. 
+> https://www.talos.dev/v1.10/introduction/getting-started/#configure-talos-linux
+
+The only difference between the steps in the official documentation and what was necessary for this cluster was adding additional control plane nodes. The following command can be executed for each additional control plane node without any modification to the `controlplane.yml` used for the original kubernetes master node.
+
+Add control plane nodes:
+```
+talosctl apply-config --insecure -f controlplane.yaml -n <new_control_plan_node> -e $CONTROL_PLANE_IP
+```
+
+Add additional worker nodes:
+```
+talosctl apply-config --insecure --nodes <ip> --file worker.yaml
+```
 
 # TODOS:
 
