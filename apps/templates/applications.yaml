@@ -13,9 +13,15 @@ spec:
     server: {{ $config.spec.destination.server | quote }}
   project: default
   source:
+    {{- if and .source (eq .source.type "remote") }}
+    repoURL: {{ .source.repoURL }}
+    chart: {{ .source.chart }}
+    targetRevision: {{ .source.targetRevision }}
+    {{- else }}
     path: apps/workloads/{{ .path | default .name }}
     repoURL: {{ $config.spec.source.repoURL }}
     targetRevision: {{ $config.spec.source.targetRevision }}
+    {{- end }}
     {{- with .tool }}
     {{- . | toYaml | nindent 4 }}
     {{- end }}

@@ -11,3 +11,13 @@ applications:
     tool:
       helm:
         releaseName: metal-lb
+  - name: envoy-gateway
+    namespace: envoy-gateway-system
+    source:
+      type: remote
+      repoURL: oci://docker.io/envoyproxy/gateway-helm
+      chart: gateway-helm
+      targetRevision: v0.0.0-latest
+    tool:
+      helm:
+        releaseName: eg
