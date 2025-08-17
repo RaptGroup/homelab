@@ -20,7 +20,7 @@ spec:
     algorithm: ECDSA
     size: 256
   issuerRef:
-    name: selfsigned-issuer
+    name: selfsigned-cluster-issuer
     kind: ClusterIssuer
     group: cert-manager.io
 ---
@@ -32,3 +32,5 @@ metadata:
 spec:
   ca:
     secretName: root-ca-secret
+    # Secret is in cert-manager namespace
+    # ClusterIssuers can access secrets in cert-manager namespace by default
