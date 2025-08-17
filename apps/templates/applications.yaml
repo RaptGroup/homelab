@@ -3,7 +3,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: {{ printf "%s" .name | quote }}
+  name: {{ printf "%s" .name }}
   namespace: argocd
   finalizers:
   - resources-finalizer.argocd.argoproj.io
@@ -13,7 +13,7 @@ spec:
     server: {{ $config.spec.destination.server | quote }}
   project: default
   source:
-    path: apps/workloads/{{ .path | default .name | quote }}
+    path: apps/workloads/{{ .path | default .name }}
     repoURL: {{ $config.spec.source.repoURL }}
     targetRevision: {{ $config.spec.source.targetRevision }}
     {{- with .tool }}

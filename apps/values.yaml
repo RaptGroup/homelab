@@ -3,11 +3,11 @@ config:
     destination:
       server: https://kubernetes.default.svc
     source:
-      repoURL: https://github.com/haljac/apps
+      repoURL: https://github.com/haljac/homelab
       targetRevision: main
-
 applications:
   - name: metal-lb
+    namespace: metallb-system
     tool:
       helm:
         releaseName: metal-lb
