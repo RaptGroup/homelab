@@ -1,5 +1,6 @@
 {{- range .Values.applications }}
 {{- $config := $.Values.config -}}
+{{- $values := .values -}}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,7 +24,16 @@ spec:
     targetRevision: {{ $config.spec.source.targetRevision }}
     {{- end }}
     {{- with .tool }}
+    {{- if and . .helm }}
+    helm:
+      releaseName: {{ .helm.releaseName }}
+      {{- if $values }}
+      values: |
+{{ $values | nindent 8 }}
+      {{- end }}
+    {{- else }}
     {{- . | toYaml | nindent 4 }}
+    {{- end }}
     {{- end }}
   syncPolicy:
     syncOptions:

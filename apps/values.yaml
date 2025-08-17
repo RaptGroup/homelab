@@ -26,3 +26,15 @@ applications:
     tool:
       helm:
         releaseName: envoy-gateway-config
+  - name: cert-manager
+    namespace: cert-manager
+    source:
+      type: remote
+      repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.18.2
+    tool:
+      helm:
+        releaseName: cert-manager
+    values: |
+      installCRDs: true
