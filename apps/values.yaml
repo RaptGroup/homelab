@@ -11,7 +11,7 @@ applications:
     tool:
       helm:
         releaseName: metal-lb
-  - name: envoy-gateway
+  - name: envoy-gateway-system
     namespace: envoy-gateway-system
     source:
       type: remote
@@ -21,3 +21,8 @@ applications:
     tool:
       helm:
         releaseName: eg
+  - name: envoy-gateway-config
+    namespace: envoy-gateway-system
+    tool:
+      helm:
+        releaseName: envoy-gateway-config
