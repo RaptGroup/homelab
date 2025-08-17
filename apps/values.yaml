@@ -21,11 +21,10 @@ applications:
     tool:
       helm:
         releaseName: eg
-  - name: envoy-gateway-config
-    namespace: envoy-gateway-system
+  - name: infrastructure
     tool:
       helm:
-        releaseName: envoy-gateway-config
+        releaseName: infrastructure
   - name: cert-manager
     namespace: cert-manager
     source:
