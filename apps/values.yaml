@@ -1,0 +1,13 @@
+config:
+  spec:
+    destination:
+      server: https://kubernetes.default.svc
+    source:
+      repoURL: https://github.com/haljac/apps
+      targetRevision: main
+
+applications:
+  - name: metal-lb
+    tool:
+      helm:
+        releaseName: metal-lb
