@@ -69,7 +69,26 @@ machine:
     #         - '!10.0.0.3/32'
     #         - fdc7::/16
   # Provides machine specific network configuration options.
-  network: {}
+  network:
+    interfaces:
+      # This needs to be set individually for each node.
+      # It's a pain in the ass and should be templated
+      - interface:
+        dhcp: false
+        addresses:
+          - 192.168.4.251/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 192.168.4.1
+        mtu: 1500
+        deviceSelector:
+          hardwareAddr: "7c:4c:58:0c:ed:36"
+          driver: virtio_net
+    nameservers:
+      - 192.168.4.232
+      - 74.40.74.40
+      - 8.8.8.8
+      - 1.1.1.1
   # # `interfaces` is used to define the network interface configuration.
   # interfaces:
   #     - interface: enp0s1 # The interface name.
@@ -409,7 +428,7 @@ cluster:
   secret: Xykryhy9M/v3RgE+m8CRCg7PkwcUas8T7jKo+mk6RZM= # Shared secret of cluster (base64 encoded random 32 bytes).
   # Provides control plane specific configuration options.
   controlPlane:
-    endpoint: https://192.168.4.236:6443 # Endpoint is the canonical controlplane endpoint, which can be an IP address or a DNS hostname.
+    endpoint: https://192.168.4.244:6443 # Endpoint is the canonical controlplane endpoint, which can be an IP address or a DNS hostname.
   clusterName: rockingham-k8s # Configures the cluster's name.
   # Provides cluster specific network configuration options.
   network:
