@@ -6,7 +6,9 @@ metadata:
   namespace: argocd
 spec:
   parentRefs:
-    - name: eg
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
       namespace: envoy-gateway-system
   hostnames:
     - "argocd.homelab.internal"
@@ -14,7 +16,7 @@ spec:
     - backendRefs:
         - group: ""
           kind: Service
-          name: argocd-server
+          name: argo-release-argocd-server
           port: 80
           weight: 1
       matches:
