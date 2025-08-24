@@ -30,3 +30,28 @@ spec:
   dnsNames:
     - hypercore1.homelab.internal
     - hypercore2.homelab.internal
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: homelab-root-ca-bundle
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  sources:
+    - secret:
+        name: root-ca-secret
+        key: ca.crt
+  target:
+    secret:
+      key: root-ca.pem
+      metadata:
+        annotations:
+          distributed-by: "trust-manager"
+        labels:
+          app: "trust-bundle"
+    namespaceSelector:
+      matchLabels:
+        # allows distribution of gateway ca bundle into
+        # the homelab namespace
+        trust: "enabled"
