@@ -41,6 +41,25 @@ applications:
         releaseName: cert-manager
     values: |
       installCRDs: true
+  - name: trust-manager
+    namespace: cert-manager
+    syncWave: "-9"
+    source:
+      type: remote
+      repoURL: https://charts.jetstack.io
+      chart: trust-manager
+      targetRevision: v0.19.0
+    tool:
+      helm:
+        releaseName: trust-manager
+    values: |
+      secretTargets:
+        enabled: true
+        authorizedSecrets:
+          - homelab-root-ca-bundle
+      app:
+        trust:
+          namespace: cert-manager
   # - name: github-arc-controller
   #   namespace: arc-systems
   #   syncWave: "5"

@@ -19,6 +19,8 @@ metadata:
 spec:
   secretName: gateway-tls-secret
   issuerRef:
+    # uses gateway root CA created in issuers.yaml
+    # (homelab-selfsigned-ca)
     name: selfsigned-app-issuer
     kind: ClusterIssuer
     group: cert-manager.io
