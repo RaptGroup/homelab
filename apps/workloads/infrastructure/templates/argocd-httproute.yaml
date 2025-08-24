@@ -4,6 +4,8 @@ kind: HTTPRoute
 metadata:
   name: argocd-route
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   parentRefs:
     - group: gateway.networking.k8s.io

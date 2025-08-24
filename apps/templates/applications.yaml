@@ -8,6 +8,10 @@ metadata:
   namespace: argocd
   finalizers:
   - resources-finalizer.argocd.argoproj.io
+  {{- if .syncWave }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "{{ .syncWave }}"
+  {{- end }}
 spec:
   destination:
     {{- if .namespace }}

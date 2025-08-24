@@ -3,6 +3,8 @@ kind: GatewayClass
 metadata:
   name: eg
   namespace: envoy-gateway-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
 ---
@@ -12,6 +14,8 @@ kind: Certificate
 metadata:
   name: gateway-tls-cert
   namespace: envoy-gateway-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: gateway-tls-secret
   issuerRef:
@@ -27,6 +31,8 @@ kind: Gateway
 metadata:
   name: eg
   namespace: envoy-gateway-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   gatewayClassName: eg
   listeners:
