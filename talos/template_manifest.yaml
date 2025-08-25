@@ -1,13 +1,17 @@
 type: Application
 version: "1"
 metadata:
-  name: "talos-base-node"
+  name: "talos-base-node-iscsi"
 spec:
   assets:
     - name: talos_disk
       type: virtual_disk
       format: raw
-      url: "https://storage.googleapis.com/demo-bucket-lfm/talos-metal-amd64.raw"
+      # must have extensions:
+      #   - siderolabs/iscsi-tools
+      #   - siderolabs/qemu-guest-agent
+      # (! These cannot be added after the fact !)
+      url: "https://storage.googleapis.com/demo-bucket-lfm/talos-metal-amd64-iscsi.raw"
   resources:
     - type: virdomain
       name: "talos-base-node-template"

@@ -18,25 +18,42 @@ configs:
     create: true
     ## NOTE: This value should be set when you generate params by other means as it changes ports used by ingress template.
     server.insecure: true
-  # -- Repositories list to be used by applications
-  ## Creates a secret for each key/value specified below to create repositories
-  ## Note: the last example in the list would use a repository credential template, configured under "configs.credentialTemplates".
   repositories:
-    # istio-helm-repo:
-    #   url: https://storage.googleapis.com/istio-prerelease/daily-build/master-latest-daily/charts
-    #   name: istio.io
-    #   type: helm
-    # private-helm-repo:
-    #   url: https://my-private-chart-repo.internal
-    #   name: private-repo
-    #   type: helm
-    #   password: my-password
-    #   username: my-username
-    # private-repo:
-    #   url: https://github.com/argoproj/private-repo
-
-  # -- Annotations to be added to `configs.repositories` Secret
-  repositoriesAnnotations: {}
+    private-repo:
+      url: https://github.com/haljac/homelab
+  credentialTemplates:
+    github-enterprise-creds-1:
+      url: https://github.com/haljac/homelab
+      githubAppID: 1797218
+      githubAppInstallationID: 81406672
+      githubAppPrivateKey: |
+        -----BEGIN RSA PRIVATE KEY-----
+        MIIEogIBAAKCAQEAsQ++0UwHqY+WgvN9fMmiSefAabNyDze35L8MfU/j8rGMhcPI
+        lOnQt2tfQUfWgi+y6s8s3FAcBNFGnAipx0x93s3gws9HMhMqmMG4p66sbqyDe4jj
+        yWvI6GS5mX1GoYQ0ItK+O6wwwkeaLxWA03qO/ikoY78EIZlvF7nlMK94wRp1aBZn
+        0UpbZ0I1UgbemfbuMSAXQtMVjIVEHv3rLCVGrW0j/kNGbuTlTQoAgH0xce5h0V97
+        KRU39ILkz+7gnXvCXrKzLvkKgoVnotPClgsd+VvqAFUUpI7CrxfxAW7zKBQWjWOA
+        zrP+QrgUAH725fPPF/umi7OrCgQq/utXueWLQQIDAQABAoH/fS+kulYHFNtwjyWY
+        k6H8HES+xf0Zp6i9W/231uGlSPI/aFQEfUTTTNudfYpNH76ZwWq5TQtWxBEy2x9E
+        6qQqWl01jIcAz2a9t0NAS040nAtc6vreEosigSy2DM+GIKxYMEbQOWCFGNeHK8MI
+        Un1UnF59MAjd4uOYqC3G3aUyu1PMevUaOZb4H+J4pCO7x7N+E7CvkMKWDPKu7YCS
+        4Ku7O8PIkrH+m707WspJHHsh/CQEZ2mwwKvKtmQPg0TNQqnVAX9qYSoRv45xcPgX
+        /+S6Xdyly2AaJ7bNKsGtPUFbAT3HhqW0JTH05fbaGUdl8Itk0BQAHdtj8Nfhswfa
+        ySaVAoGBANuYHGc39vncZtoJlChcExD7tGV4XhPukzvHTEiYmSlaScReBWGDCwz1
+        LLnUywzctDqPyWudexH4NCrTJWnetr60RDdArtXZv1diyPt0YIwDMtXWbZphikz5
+        vS8EoMkecAgtwTxqUsTLslLkYZ9llHe0WpclOSn+CQ3073g11HUXAoGBAM5qfLbL
+        Q4xgofB2QhfyUGJ5DUSF79d0LGXdy8x4VBfNfHRdFudSD9EjgG/ToNNOH0cEKQVp
+        JWaA/9fTTfgeSdV1ojg3BERXRRXpLstrOzh9Guo4A+k/CMOqqi7mRYtCySKA+aII
+        ltN/ntvkxPLFweATwdrLGZw0qr7sZ/7kPGlnAoGAd1dusEYBCn/Wwc6M33ZSwlsZ
+        CkBlWI3DJKzGb3nHW2r/RiIW6IzQV6VzPjdAdugHZwA35i168iQjLdb8sVHhnTjZ
+        DfIwUnZ5f6NnOQlhYxZl7UMQ4+L4x6a+QyxPuZ26IyfCqfPasatGabhGudr52iiB
+        Rz1qmMC/6P7hmkIfCdcCgYEAi9IUIpozal52s3TXtnLcQqfu9dCoM1CtVl9UUm/b
+        vrfhqsz32795mVgsAxPeZ+QOScOmqdSckf+lziODOCQELYTeWqfhyw02be4jVYWQ
+        euY7mhZRh+i73ha36sbuqrOVnTqyXjDlQeS7zgX75ttQRaH8eWGEOoxucJ+gnkcq
+        KNcCgYEAjP1rdRSFhYmtsZVxJ+lXhetExAV9TmMmXgAHFNofpyNVTpJVqS2kkydR
+        XgQRrc2Ew9XwmvdYcpzfjloZelMnsf+yWs7FjX/HzgEeOxyHoRcx2qTfYHvogiPz
+        caRPAda0fgMX2hOFixcxlvWH31YI7YpSIvWMxhBgsgY5P5oxp6A=
+        -----END RSA PRIVATE KEY-----
 ## Application controller
 controller:
   # -- Application controller name string
