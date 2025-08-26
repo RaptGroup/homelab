@@ -67,21 +67,3 @@ Add additional worker nodes:
 ```
 talosctl apply-config --insecure --nodes <ip> --file worker.yaml
 ```
-
-# TODOS:
-
-- [x] PiHole for DNS Sanity in the lab
-- [ ] NGINX Proxy VM:
-    - [x] Base VM with podman, nginx
-    - [x] Rules for hypercore clusters with load balancing
-    - [ ] Rules for kubernetes cluster API
-- [ ] Kubernetes Cluster
-    - [ ] Provision talos cluster
-        - [ ] MachineConfig
-    - [ ] Kraken Manifest
-    - [ ] Hypercore 1:
-        - [ ] 1 control plane node
-        - [ ] 2 worker nodes
-    - [ ] Hypercore 2:
-        - [ ] 2 control plane nodes
-        - [ ] 3 worker nodes
