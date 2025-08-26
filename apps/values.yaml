@@ -67,7 +67,7 @@ applications:
       type: remote
       repoURL: oci://ghcr.io/actions/actions-runner-controller-charts
       chart: gha-runner-scale-set-controller
-      targetRevision: 0.12.0
+      targetRevision: 0.12.1
     tool:
       helm:
         releaseName: arc-controller
