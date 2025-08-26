@@ -65,9 +65,9 @@ applications:
     syncWave: "5"
     source:
       type: remote
-      repoURL: oci://ghcr.io/actions/actions-runner-controller-charts
+      repoURL: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
       chart: gha-runner-scale-set-controller
-      targetRevision: latest
+      targetRevision: 0.12.1
     tool:
       helm:
         releaseName: arc-controller
