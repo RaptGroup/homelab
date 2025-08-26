@@ -61,7 +61,7 @@ applications:
         trust:
           namespace: cert-manager
   - name: github-arc-controller
-    namespace: arc-systems
+    namespace: arc-system
     syncWave: "5"
     ignoreDifferences:
       - group: apiextensions.k8s.io
@@ -77,7 +77,7 @@ applications:
       helm:
         releaseName: arc-controller
   - name: github-arc-runners
-    namespace: github-arc-runners
+    namespace: arc-system
     syncWave: "5"
     source:
       type: remote
@@ -89,6 +89,9 @@ applications:
         releaseName: arc-runners
     values: |
       githubConfigUrl: "https://github.com/haljac/homelab"
+      controllerServiceAccount:
+        name: arc-controller-gha-rs-controller
+        namespace: arc-system
       githubConfigSecret:
         github_app_id: "1801903"
         github_app_installation_id: "81553437"
