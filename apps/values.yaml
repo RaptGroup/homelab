@@ -63,6 +63,11 @@ applications:
   - name: github-arc-controller
     namespace: arc-systems
     syncWave: "5"
+    ignoreDifferences:
+      - group: apiextensions.k8s.io
+        kind: CustomResourceDefinition
+        jsonPointers:
+          - /spec/preserveUnknownFields
     source:
       type: remote
       repoURL: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller

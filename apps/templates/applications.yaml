@@ -13,6 +13,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "{{ .syncWave }}"
   {{- end }}
 spec:
+  {{- if .ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml .ignoreDifferences | nindent 4 }}
+  {{- end }}
   destination:
     {{- if .namespace }}
     namespace: {{ .namespace | quote }}
