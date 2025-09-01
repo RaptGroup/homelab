@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
   labels:
-    security.kubernetes.io/enforce: privileged
-    security.kubernetes.io/audit: privileged
-    security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+
