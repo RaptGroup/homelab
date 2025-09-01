@@ -60,20 +60,20 @@ applications:
       app:
         trust:
           namespace: cert-manager
-  #   - name: longhorn
-  #     namespace: longhorn-system
-  #     syncWave: "-5"
-  #     source:
-  #       type: remote
-  #       repoURL: https://charts.longhorn.io
-  #       chart: longhorn
-  #       targetRevision: v1.9.1
-  #     tool:
-  #       helm:
-  #         releaseName: longhorn
-  #     values: |
-  #       preUpgradeChecker:
-  #         jobEnabled: false
+  - name: longhorn
+    namespace: longhorn-system
+    syncWave: "-5"
+    source:
+      type: remote
+      repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: v1.9.1
+    tool:
+      helm:
+        releaseName: longhorn
+    values: |
+      preUpgradeChecker:
+        jobEnabled: false
   - name: github-arc-controller
     namespace: arc-system
     syncWave: "5"
