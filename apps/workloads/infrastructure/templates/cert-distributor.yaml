@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cert-distributor
+  namespace: homelab
+  labels:
+    app: cert-distributor
+spec:
+    concurrencyPolicy: Forbid
+    # shedule every 12 hours
+    schedule: "0 */12 * * *"
+    jobTemplate:
+      spec:
+        template:
+          spec:
+            imagePullSecrets:
+              - name: gcp-artifact-registry-secret
+            restartPolicy: OnFailure
+            containers:
+              - name: cert-distributor
+                image: us-central1-docker.pkg.dev/quantify-self-dev/homelab/hc-cert-distributor:latest
+                imagePullPolicy: Always
+                env:
+                  - name: HYPERCORE_CA_DISTRIBUTOR_CA_PATH
+                    value: /app/certificates/ca.crt
+                  - name: HYPERCORE_CA_DISTRIBUTOR_TLS_CERT_PATH
+                    value: /app/certificates/tls.crt
+                  - name: HYPERCORE_CA_DISTRIBUTOR_TLS_KEY_PATH
+                    value: /app/certificates/tls.key
+                volumeMounts:
+                  - name: certs
+                    mountPath: /app/certificates
+                    readOnly: true
+            volumes:
+            - name: certs
+              secret:
+                secretName: hypercore-tls-secret
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                  - key: tls.crt
+                    path: tls.crt
+                  - key: tls.key
+                    path: tls.key
