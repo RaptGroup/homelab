@@ -11,7 +11,7 @@ This is the Rockingham Homelab repository, which contains infrastructure configu
 The homelab is structured around several key components:
 
 ### Infrastructure Components
-- **Talos Linux Kubernetes Cluster**: 3-node HE-153 cluster (control plane) + 3-node HE-150 cluster (workers)
+- **Talos Linux Kubernetes Cluster**: 6 bare-metal NUCs — 3 small (6c/16GB/500GB) as control plane, 3 large (8c/64GB/1TB) as workers
 - **ArgoCD**: GitOps deployment management (`argocd/values.yaml`)
 - **MetalLB**: Load balancer for bare metal Kubernetes
 - **Cert-Manager + Trust-Manager**: TLS certificate management
@@ -32,7 +32,6 @@ The homelab is structured around several key components:
 - `talos/`: Talos Linux configuration files (controlplane.yaml, worker.yaml)
 - `homelab/`: Go application source code (CA server)
 - `argocd/`: ArgoCD installation configuration
-- `vms/`: Virtual machine manifests
 
 ## Development Commands
 
@@ -61,9 +60,11 @@ make run
 
 ### Kubernetes Operations
 ```bash
-# Apply Talos configuration (already done)
-talosctl apply-config --insecure -f controlplane.yaml -n <node_ip> -e $CONTROL_PLANE_IP
-talosctl apply-config --insecure --nodes <ip> --file worker.yaml
+# Apply Talos configuration. Network address + MAC must be patched per node.
+talosctl apply-config --insecure -n <node_ip> -e $CONTROL_PLANE_IP \
+  --config-patch @talos/patches/<node>.yaml -f talos/controlplane.yaml
+talosctl apply-config --insecure --nodes <ip> \
+  --config-patch @talos/patches/<node>.yaml --file talos/worker.yaml
 
 # Check cluster status
 kubectl get nodes

@@ -1,9 +1,7 @@
 # Variables
 CA_BINARY_NAME=ca-server
-DISTRIBUTOR_BINARY_NAME=distributor
 MODULE_NAME=github.com/haljac/homelab
 CA_SERVER_PATH=./cmd/ca-server
-DISTRIBUTOR_PATH=./cmd/distributor
 BUILD_DIR=bin
 
 # Default target
@@ -20,19 +18,16 @@ clean:
 .PHONY: build-linux
 build-linux:
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(CA_BINARY_NAME)-linux-amd64 $(CA_SERVER_PATH)
-	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(DISTRIBUTOR_BINARY_NAME)-linux-amd64 $(DISTRIBUTOR_PATH)
 
 # Build for macOS Apple Silicon (ARM64)
 .PHONY: build-darwin
 build-darwin:
 	GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(CA_BINARY_NAME)-darwin-arm64 $(CA_SERVER_PATH)
-	GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(DISTRIBUTOR_BINARY_NAME)-darwin-arm64 $(DISTRIBUTOR_PATH)
 
 # Build for current platform
 .PHONY: build
 build:
 	go build -o $(BUILD_DIR)/$(CA_BINARY_NAME) $(CA_SERVER_PATH)
-	go build -o $(BUILD_DIR)/$(DISTRIBUTOR_BINARY_NAME) $(DISTRIBUTOR_PATH)
 
 # Install dependencies
 .PHONY: deps
@@ -49,10 +44,6 @@ test:
 .PHONY: run-ca-server
 run-ca-server: build
 	./$(BUILD_DIR)/$(CA_BINARY_NAME)
-
-.PHONY: run-distributor
-run-distributor: build
-	./$(BUILD_DIR)/$(DISTRIBUTOR_BINARY_NAME)
 
 # Format code
 .PHONY: fmt

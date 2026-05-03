@@ -69,12 +69,11 @@ machine:
     #         - '!10.0.0.3/32'
     #         - fdc7::/16
   # Provides machine specific network configuration options.
+  # The address + deviceSelector block must be patched per node before apply
+  # (e.g. talosctl apply-config --config-patch @patches/<node>.yaml).
   network:
     interfaces:
-      # This needs to be set individually for each node.
-      # It's a pain in the ass and should be templated
-      - interface:
-        dhcp: false
+      - dhcp: false
         addresses:
           - 192.168.4.251/24
         routes:
@@ -82,8 +81,7 @@ machine:
             gateway: 192.168.4.1
         mtu: 1500
         deviceSelector:
-          hardwareAddr: "7c:4c:58:0c:ed:36"
-          driver: virtio_net
+          hardwareAddr: "REPLACE_WITH_NODE_MAC"
     nameservers:
       - 192.168.4.232
       - 74.40.74.40
@@ -207,9 +205,11 @@ machine:
 
   # Used to provide instructions for installations.
   install:
-    disk: /dev/vda # The disk used for installations.
-    image: ghcr.io/siderolabs/installer:v1.10.6 # Allows for supplying the image used to perform the installation.
-    wipe: false # Indicates if the installation disk should be wiped at installation time.
+    # NVMe is the default install target for the NUCs.
+    # If a node has a different layout, override per node.
+    disk: /dev/nvme0n1
+    image: ghcr.io/siderolabs/installer:v1.10.6
+    wipe: false
 
     # # Look up disk using disk attributes like model, size, serial and others.
     # diskSelector:

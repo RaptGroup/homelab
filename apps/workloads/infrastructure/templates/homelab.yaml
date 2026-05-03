@@ -11,26 +11,6 @@ metadata:
     trust: "enabled"
 
 ---
-# Certificate for Hypercore REST API
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: hypercore-tls-cert
-  namespace: homelab
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: hypercore-tls-secret
-  issuerRef:
-    # uses gateway root CA created in issuers.yaml
-    # (homelab-selfsigned-ca)
-    name: selfsigned-app-issuer
-    kind: ClusterIssuer
-    group: cert-manager.io
-  dnsNames:
-    - hypercore1.homelab.internal
-    - hypercore2.homelab.internal
----
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
