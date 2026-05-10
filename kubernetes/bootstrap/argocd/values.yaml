@@ -1,0 +1,19 @@
+# Argo CD Helm values — read by terraform/bootstrap (initial install) and
+# by the self-managed argocd Application (every reconcile thereafter).
+# Changes here flow into the cluster automatically once Argo is healthy.
+
+global:
+  # Used by argocd-server's redirect logic and by the documented
+  # Gateway/HTTPRoute (lives under kubernetes/apps/argocd/, not here).
+  domain: argocd.lab.jackhall.dev
+
+configs:
+  params:
+    # TLS terminates at the Gateway, not at argocd-server. Keeps the
+    # internal hop plaintext and avoids cert plumbing inside the pod.
+    server.insecure: true
+
+  cm:
+    # Lets Application manifests reference plain http/https git URLs
+    # (the homelab convention; SSH only when private repos arrive).
+    timeout.reconciliation: 180s

@@ -1,0 +1,31 @@
+# Root app-of-apps. Watches kubernetes/apps/ recursively and treats every
+# file matching `application.yaml` as an Argo Application — so adding an
+# addon is dropping a kubernetes/apps/<name>/application.yaml and pushing.
+# Not ApplicationSet (single-Application pattern is sufficient at homelab
+# scale and keeps the diff surface small).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: ${argocd_namespace}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${argocd_namespace}
+  source:
+    repoURL: ${repo_url}
+    targetRevision: ${target_revision}
+    path: kubernetes/apps
+    directory:
+      recurse: true
+      include: "**/application.yaml"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

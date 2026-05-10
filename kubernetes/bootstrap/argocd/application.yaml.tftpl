@@ -1,0 +1,35 @@
+# Self-managed Argo CD. Argo watches an Application that points back at the
+# same Helm chart it was bootstrapped from, with values pulled from this
+# repo via the multi-source `$values` ref. Chart upgrades = bumping
+# chart_version in terraform/bootstrap/variables.tf and re-rendering this
+# file (or editing the rendered manifest in-cluster — Argo wins).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: ${argocd_namespace}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${argocd_namespace}
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: ${chart_version}
+      helm:
+        valueFiles:
+          - $values/kubernetes/bootstrap/argocd/values.yaml
+    - repoURL: ${repo_url}
+      targetRevision: ${target_revision}
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
