@@ -33,14 +33,14 @@ VM-based design that ran on Hypercore.
   by whichever control-plane node currently owns it.
 - **Control plane** — `cp-01` (`192.168.1.245`), `cp-02` (`.246`), `cp-03`
   (`.247`). All three carry the VIP membership.
-- **Workers** — `worker-01` (`192.168.1.241`), `worker-02` (`.242`).
+- **Workers** — `worker-01` (`192.168.1.241`), `worker-02` (`.242`),
+  `worker-03` (`.243`).
 - Per-node patches live under `talos/patches/nodes/<hostname>.yaml` and
   carry only the bits that differ between nodes: hostname, static address,
   install disk, and VIP membership for control planes.
 
 ## Status
 
-Rebuild in progress. Talos machine configs for five nodes are in place;
-the remaining node, the bootstrap and bring-up runbooks, and the
-Terraform layer are next. This page will grow as the cluster comes back
-online.
+Rebuild in progress. Talos machine configs for all six nodes are in
+place; the bootstrap and bring-up runbooks and the Terraform layer are
+next. This page will grow as the cluster comes back online.
