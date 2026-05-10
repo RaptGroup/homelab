@@ -156,6 +156,36 @@ resource "google_secret_manager_secret" "talos_cluster_secrets" {
   depends_on = [google_project_service.enabled]
 }
 
+# --- ArgoCD: GitHub deploy key for the homelab repo --------------------------
+#
+# Container only, same rationale as talos-cluster-secrets above. The
+# matching public half is registered as a read-only deploy key on
+# jvcorredor/homelab so ArgoCD can clone the (private) repo without
+# embedding a long-lived PAT. ESO syncs the private key into a K8s Secret
+# in the argocd namespace labelled
+# `argocd.argoproj.io/secret-type: repository`; the SSH URL match means
+# Argo applies it to every Application whose `repoURL` is the SSH form.
+#
+# Upload (after `tofu apply` here):
+#   gcloud secrets versions add argocd-repo-ssh-key \
+#     --project=rockingham-homelab \
+#     --data-file=<path-to-private-key>
+resource "google_secret_manager_secret" "argocd_repo_ssh_key" {
+  project   = google_project.lab.project_id
+  secret_id = "argocd-repo-ssh-key"
+
+  labels = {
+    purpose  = "gitops"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on

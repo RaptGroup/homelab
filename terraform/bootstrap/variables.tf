@@ -47,9 +47,9 @@ variable "control_plane_node_selector" {
 }
 
 variable "argocd_repo_url" {
-  description = "Git repository ArgoCD reads bootstrap manifests from (the root app-of-apps and the self-managed argocd Application). HTTPS form so anonymous reads work without an SSH key."
+  description = "Git repository ArgoCD reads bootstrap manifests from (the root app-of-apps and the self-managed argocd Application). SSH form because the homelab repo is private; the deploy key is synced from GSM by ESO into a labelled `repository` Secret in the argocd namespace."
   type        = string
-  default     = "https://github.com/jvcorredor/homelab.git"
+  default     = "git@github.com:jvcorredor/homelab.git"
 }
 
 variable "argocd_target_revision" {
