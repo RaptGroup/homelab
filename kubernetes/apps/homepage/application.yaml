@@ -22,7 +22,7 @@ spec:
       helm:
         valueFiles:
           - $values/kubernetes/apps/homepage/helm-values.yaml
-    - repoURL: https://github.com/jvcorredor/homelab.git
+    - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
       ref: values
   syncPolicy:
