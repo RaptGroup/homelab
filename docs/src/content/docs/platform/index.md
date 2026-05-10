@@ -5,7 +5,7 @@ description: The cluster-side services Terraform installs before ArgoCD takes ov
 
 The platform layer is the small set of cluster-side services that have to
 exist before ArgoCD has anything to reconcile against. It is what
-[`terraform/bootstrap/`](https://github.com/jvcorredor/homelab/tree/main/terraform/bootstrap)
+[`terraform/bootstrap/`](https://github.com/RaptGroup/homelab/tree/main/terraform/bootstrap)
 installs onto an empty Talos cluster, in a fixed order, ending with
 ArgoCD pointing at `kubernetes/apps/`. After that the platform is
 hands-off: every addon under [Applications](/homelab/applications/)
@@ -23,7 +23,7 @@ documented:
 
 Cilium is the fifth service `terraform/bootstrap/` installs but it has
 its own dedicated treatment in
-[ADR-0002 — Cilium as the unified networking layer](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
+[ADR-0002 — Cilium as the unified networking layer](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
 and across the [Networking](/homelab/networking/split-horizon-dns/) and
 [Applications](/homelab/applications/lab-gateway/) sections, so it is
 deliberately out of scope here.
@@ -31,7 +31,7 @@ deliberately out of scope here.
 ## Why these four are bootstrapped via Terraform
 
 The full rationale lives in
-[ADR-0001 — IaC strategy](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md).
+[ADR-0001 — IaC strategy](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md).
 The short version: ArgoCD cannot reconcile itself before it exists, and
 several of the addons that follow it depend on cert-manager, ESO, and a
 default `StorageClass` already being present. Something has to run the
@@ -97,13 +97,13 @@ output of cert-manager + ESO + Cloud DNS together. local-path is the
 quieter dependency: every addon that asks for a PVC without naming a
 `StorageClass` gets one carved out of a node's local disk. ArgoCD ties
 the rest of the cluster to git — every directory under
-[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps)
+[`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps)
 becomes an `Application` automatically via the root app-of-apps.
 
 ## More
 
 The repo-side
-[`terraform/bootstrap/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/README.md)
+[`terraform/bootstrap/README.md`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/README.md)
 covers the operator's run book — prerequisites, what to do on a partial
 apply, idempotency guarantees, and the chart-version variables for
 upgrading any of these services.

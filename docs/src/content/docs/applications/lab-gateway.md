@@ -11,14 +11,14 @@ LB IP, one Envoy proxy, one wildcard cert, one knob to tune.
 
 This wasn't always the shape: each addon used to bring its own Gateway.
 Collapsing them down was issue #48 — see
-[ADR-0002 — Cilium as the unified networking layer](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
+[ADR-0002 — Cilium as the unified networking layer](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
 for the broader "one Cilium for everything" rationale.
 
 ## Where it runs
 
 A single `Gateway` resource lives in the `gateway-system` namespace.
 There is no chart and no values file —
-[`kubernetes/apps/lab-gateway/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/lab-gateway)
+[`kubernetes/apps/lab-gateway/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/lab-gateway)
 is just three raw manifests: a Namespace, the `Gateway`, and one
 `ReferenceGrant`.
 
@@ -143,6 +143,6 @@ left or middle column — it adds one more leaf at the right.
 ## More
 
 The repo-side README at
-[`kubernetes/apps/lab-gateway/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/lab-gateway/README.md)
+[`kubernetes/apps/lab-gateway/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/lab-gateway/README.md)
 spells out the full manifest set, the LB-IP allocation table in
 context, and the migration that landed in issue #48.

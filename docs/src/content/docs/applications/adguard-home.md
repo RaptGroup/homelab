@@ -24,7 +24,7 @@ Services:
   AdGuard Home for resolution (otherwise the hostname doesn't resolve).
 
 Source lives at
-[`kubernetes/apps/adguard-home/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/adguard-home).
+[`kubernetes/apps/adguard-home/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/adguard-home).
 
 ## Role in split-horizon DNS
 
@@ -53,7 +53,7 @@ already covers them. They only need an `HTTPRoute` attaching to the
 For the architecture rationale (why split-horizon at all, and why
 AdGuard Home runs in-cluster), see
 [Split-horizon DNS](/homelab/networking/split-horizon-dns/) and
-[ADR-0003](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md).
+[ADR-0003](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md).
 
 ## Accessing the UI
 
@@ -89,12 +89,12 @@ devices apart by IP alone. Use AdGuard's **ClientIDs** (DoH/DoT
 suffixes or a PTR record) when per-client behavior matters. The
 underlying reason ETP=Cluster is the right choice for an L2-announced
 LB Service is in
-[`kubernetes/apps/adguard-home/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/adguard-home/README.md#source-ip-and-per-client-features).
+[`kubernetes/apps/adguard-home/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/adguard-home/README.md#source-ip-and-per-client-features).
 
 ## More
 
 The repo-side README at
-[`kubernetes/apps/adguard-home/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/adguard-home/README.md)
+[`kubernetes/apps/adguard-home/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/adguard-home/README.md)
 covers operator-only material: the first-install flow (bcrypt hash →
 GSM → ESO sync), what the seed config writes vs. what the UI owns,
 and the disaster-recovery procedure.

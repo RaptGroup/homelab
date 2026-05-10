@@ -4,18 +4,18 @@ description: Index of ADRs capturing the load-bearing architectural decisions fo
 ---
 
 The lab keeps a small set of Architecture Decision Records under
-[`docs/adr/`](https://github.com/jvcorredor/homelab/tree/main/docs/adr)
+[`docs/adr/`](https://github.com/RaptGroup/homelab/tree/main/docs/adr)
 in the repo. Each ADR captures **one** load-bearing decision: what was
 chosen, what was rejected, and why. ADRs explain **why**;
-[`CONTEXT.md`](https://github.com/jvcorredor/homelab/blob/main/CONTEXT.md)
+[`CONTEXT.md`](https://github.com/RaptGroup/homelab/blob/main/CONTEXT.md)
 defines **what we call things**.
 
 The ADR convention itself — format, lifecycle, when to write one — is
-in [`docs/adr/README.md`](https://github.com/jvcorredor/homelab/blob/main/docs/adr/README.md).
+in [`docs/adr/README.md`](https://github.com/RaptGroup/homelab/blob/main/docs/adr/README.md).
 
 ## Accepted ADRs
 
-### [ADR-0001 — IaC strategy: thin Terraform plus ArgoCD app-of-apps](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md)
+### [ADR-0001 — IaC strategy: thin Terraform plus ArgoCD app-of-apps](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md)
 
 Terraform owns two roots — `terraform/gcp/` for cloud resources and
 `terraform/bootstrap/` for the chicken-and-egg cluster pieces (Gateway
@@ -25,7 +25,7 @@ watching `kubernetes/apps/`. All cloud resources live in one GCP
 project, `rockingham-homelab`. Rejected: pure Terraform, pure
 ArgoCD-from-zero, Pulumi, Crossplane.
 
-### [ADR-0002 — Cilium as the unified networking layer](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
+### [ADR-0002 — Cilium as the unified networking layer](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0002-cilium-unified-networking.md)
 
 A single Cilium Helm release covers CNI, kube-proxy replacement,
 LoadBalancer IPAM with L2 announcements, and Gateway API. The required
@@ -34,7 +34,7 @@ Talos-specific Helm values (`kubeProxyReplacement`, KubePrism on
 capabilities) are pinned in `terraform/bootstrap/`. Rejected:
 Flannel + MetalLB + Envoy Gateway, Calico, Kube-OVN.
 
-### [ADR-0003 — Public domain, DNS-01 wildcard, split-horizon](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md)
+### [ADR-0003 — Public domain, DNS-01 wildcard, split-horizon](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md)
 
 Public domain `jackhall.dev` with the `lab` subzone NS-delegated to
 Google Cloud DNS. cert-manager issues a Let's Encrypt wildcard for

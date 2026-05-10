@@ -4,7 +4,7 @@ description: The three GitHub Actions workflows that gate PRs and publish this s
 ---
 
 The repo has three workflows in
-[`.github/workflows/`](https://github.com/jvcorredor/homelab/tree/main/.github/workflows).
+[`.github/workflows/`](https://github.com/RaptGroup/homelab/tree/main/.github/workflows).
 Two of them run on every relevant PR and gate the merge; the third
 publishes this site on every push to `main`. None of them apply
 infrastructure — `tofu apply` and `argocd app sync` remain operator
@@ -29,7 +29,7 @@ the contract that lets other repos opt in.
 
 ## `apps-lint`
 
-[`.github/workflows/apps-lint.yml`](https://github.com/jvcorredor/homelab/blob/main/.github/workflows/apps-lint.yml)
+[`.github/workflows/apps-lint.yml`](https://github.com/RaptGroup/homelab/blob/main/.github/workflows/apps-lint.yml)
 catches manifest-shape bugs before ArgoCD ever sees them. Two jobs:
 
 - **`detect`** computes the set of affected addons from `git diff`,
@@ -80,7 +80,7 @@ cached.
 
 ## `terraform-plan`
 
-[`.github/workflows/terraform-plan.yml`](https://github.com/jvcorredor/homelab/blob/main/.github/workflows/terraform-plan.yml)
+[`.github/workflows/terraform-plan.yml`](https://github.com/RaptGroup/homelab/blob/main/.github/workflows/terraform-plan.yml)
 runs on PRs that touch `terraform/**`. The structure mirrors
 `apps-lint`: a `detect` job computes the affected roots (`gcp`,
 `bootstrap`) and a matrix runs per root.
@@ -117,7 +117,7 @@ to run if any are missing.
 
 ## `deploy-docs`
 
-[`.github/workflows/deploy-docs.yml`](https://github.com/jvcorredor/homelab/blob/main/.github/workflows/deploy-docs.yml)
+[`.github/workflows/deploy-docs.yml`](https://github.com/RaptGroup/homelab/blob/main/.github/workflows/deploy-docs.yml)
 publishes this site. It runs on every push to `main` that changes
 `docs/**` (and on manual `workflow_dispatch`):
 
@@ -131,7 +131,7 @@ Pages concurrency is grouped to `pages` with
 other's deploys — the second waits for the first to finish. The
 deployed URL is whatever GitHub Pages reports back via
 `steps.deployment.outputs.page_url` (currently
-[`jvcorredor.github.io/homelab`](https://jvcorredor.github.io/homelab/)).
+[`raptgroup.github.io/homelab`](https://raptgroup.github.io/homelab/)).
 
 There is no preview deploy on PRs — the site is rebuilt on merge and
 docs PRs are reviewed against the rendered markdown in the diff.
@@ -243,12 +243,12 @@ Conventions to keep new workflows consistent with the existing three:
 
 ## More
 
-- [`scripts/lint-apps.sh`](https://github.com/jvcorredor/homelab/blob/main/scripts/lint-apps.sh)
+- [`scripts/lint-apps.sh`](https://github.com/RaptGroup/homelab/blob/main/scripts/lint-apps.sh)
   — the script behind `apps-lint`.
 - [Cloud / Workload Identity Federation](/homelab/cloud/gcp/#workload-identity-federation)
   — the WIF pool, provider trust scope, and plan-only `tf-ci-plan` SA
   the `terraform-plan` workflow authenticates against.
-- [`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/gcp/README.md#ci-github-actions-auth)
+- [`terraform/gcp/README.md`](https://github.com/RaptGroup/homelab/blob/main/terraform/gcp/README.md#ci-github-actions-auth)
   — operator run book for the WIF pool, including how to extract the
   values for `GCP_WIF_PROVIDER` and `GCP_CI_SA`.
 - [ARC runners](/homelab/applications/arc/) — the in-cluster pools

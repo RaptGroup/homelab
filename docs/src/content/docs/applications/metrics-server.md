@@ -25,7 +25,7 @@ kubernetes/apps/metrics-server/
 ```
 
 Source lives at
-[`kubernetes/apps/metrics-server/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/metrics-server).
+[`kubernetes/apps/metrics-server/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/metrics-server).
 
 ## What it unlocks
 
@@ -105,7 +105,7 @@ returns a non-empty row — first call sometimes responds with
 ## More
 
 The repo-side README at
-[`kubernetes/apps/metrics-server/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/metrics-server/README.md)
+[`kubernetes/apps/metrics-server/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/metrics-server/README.md)
 covers the full Talos-tuning rationale, the `kube-prometheus-stack`
 comparison in more depth, and the disaster-recovery story (the addon
 is stateless — re-syncing the Application is the entire procedure;

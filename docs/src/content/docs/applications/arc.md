@@ -7,15 +7,15 @@ description: Self-hosted GitHub Actions runners — one ARC controller plus two 
 (ARC) gives the homelab a pool of self-hosted GitHub Actions runners
 that scale to zero when idle and run workflow jobs as ephemeral pods on
 the cluster. The lab runs three Applications under
-[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps)
+[`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps)
 that together form one logical system:
 
-- [`arc-controller/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/arc-controller)
+- [`arc-controller/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/arc-controller)
   — the cluster-wide controller (one per cluster).
-- [`arc-runners-raptgroup/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/arc-runners-raptgroup)
+- [`arc-runners-raptgroup/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/arc-runners-raptgroup)
   — scale set targeting [`github.com/RaptGroup`](https://github.com/RaptGroup),
   the operator's personal-projects org.
-- [`arc-runners-brazostech/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/arc-runners-brazostech)
+- [`arc-runners-brazostech/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/arc-runners-brazostech)
   — scale set targeting [`github.com/brazostech`](https://github.com/brazostech).
 
 The split mirrors GitHub's `gha-runner-scale-set` two-chart pattern
@@ -61,7 +61,7 @@ ARC` — with **two installations**, one per target org:
 
 App ID and private key are shared; only the installation ID differs.
 The containers are TF-managed in
-[`terraform/gcp/`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp);
+[`terraform/gcp/`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp);
 the External Secrets Operator syncs each value from Google Secret
 Manager into a K8s Secret in the pool's namespace. Each pool's
 `ExternalSecret` projects its three values into a single Secret the
@@ -158,9 +158,9 @@ back to 0 within a minute or two of completion.
 ## More
 
 The per-addon READMEs at
-[`kubernetes/apps/arc-controller/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/arc-controller/README.md),
-[`kubernetes/apps/arc-runners-raptgroup/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/arc-runners-raptgroup/README.md),
+[`kubernetes/apps/arc-controller/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/arc-controller/README.md),
+[`kubernetes/apps/arc-runners-raptgroup/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/arc-runners-raptgroup/README.md),
 and
-[`kubernetes/apps/arc-runners-brazostech/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/arc-runners-brazostech/README.md)
+[`kubernetes/apps/arc-runners-brazostech/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/arc-runners-brazostech/README.md)
 cover the per-addon manifests, the `fullnameOverride` rationale, and
 verification commands.

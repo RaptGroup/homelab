@@ -51,7 +51,7 @@ vocabulary — IaC split (ADR-0001), Cilium as the unified networking layer
 per-addon detail lives in `kubernetes/apps/<name>/README.md`.
 
 The public site lives in [`docs/`](./docs) and is published to GitHub Pages
-at <https://jvcorredor.github.io/homelab/> by the `Deploy docs` workflow on
+at <https://raptgroup.github.io/homelab/> by the `Deploy docs` workflow on
 every push to `main`. Run the site locally with:
 
 ```sh

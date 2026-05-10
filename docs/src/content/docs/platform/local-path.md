@@ -17,7 +17,7 @@ Two reasons. First, ordering: ArgoCD addons that ship a PVC need a
 default `StorageClass` to bind against, and an empty Talos cluster
 ships none. Without local-path in place before ArgoCD reconciles its
 first PVC-using addon (AdGuard Home was the trigger, see
-[issue #28](https://github.com/jvcorredor/homelab/issues/28)), the
+[issue #28](https://github.com/RaptGroup/homelab/issues/28)), the
 addon hangs in `Pending`. Second, the install needs two non-Helm,
 non-manifest knobs that are easier to express in Terraform than as a
 sibling Helm release: marking the class default with the
@@ -28,7 +28,7 @@ privileged` so the helper Pods can use `hostPath` (see
 
 ## Where the config lives
 
-[`terraform/bootstrap/local-path.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/local-path.tf)
+[`terraform/bootstrap/local-path.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/local-path.tf)
 is the complete picture:
 
 - The upstream `deploy/local-path-storage.yaml` from
@@ -117,7 +117,7 @@ workload in another namespace inherits the carve-out.
 ## Phase 2: Longhorn
 
 Replicated block storage is the planned upgrade — see the
-[storage-strategy](https://github.com/jvcorredor/homelab/blob/main/docs/adr/)
+[storage-strategy](https://github.com/RaptGroup/homelab/blob/main/docs/adr/)
 discussion in CONTEXT and the relevant ADR when written. Longhorn
 needs:
 
@@ -133,8 +133,8 @@ that needs replicated storage is deferred along with the upgrade.
 
 ## More
 
-[`terraform/bootstrap/local-path.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/local-path.tf)
+[`terraform/bootstrap/local-path.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/local-path.tf)
 documents the helper-Pod / PSA reasoning inline; it's the canonical
 source for *why* the namespace is privileged. The recovery procedure
 for a failed apply is in
-[`terraform/bootstrap/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/README.md#recovery-from-a-partial-apply).
+[`terraform/bootstrap/README.md`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/README.md#recovery-from-a-partial-apply).

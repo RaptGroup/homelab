@@ -3,7 +3,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://jvcorredor.github.io',
+  site: 'https://raptgroup.github.io',
   base: '/homelab',
   integrations: [
     starlight({
@@ -11,10 +11,10 @@ export default defineConfig({
       description:
         'Documentation for the Rockingham Homelab: a 6-node bare-metal Kubernetes cluster running Talos Linux.',
       social: {
-        github: 'https://github.com/jvcorredor/homelab',
+        github: 'https://github.com/RaptGroup/homelab',
       },
       editLink: {
-        baseUrl: 'https://github.com/jvcorredor/homelab/edit/main/docs/',
+        baseUrl: 'https://github.com/RaptGroup/homelab/edit/main/docs/',
       },
       lastUpdated: true,
       sidebar: [

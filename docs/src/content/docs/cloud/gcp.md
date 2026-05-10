@@ -5,7 +5,7 @@ description: The single GCP project that owns every cloud-side resource for the 
 
 Everything the lab needs from a cloud provider lives in one GCP project,
 `rockingham-homelab`. The project is created by
-[`terraform/gcp/`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp)
+[`terraform/gcp/`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp)
 and holds, in a single bounded blast radius:
 
 - Two Cloud DNS managed zones (`jackhall.dev` apex + `lab.jackhall.dev`
@@ -32,9 +32,9 @@ with `tofu destroy` — the project resource has `deletion_policy = "DELETE"`,
 which overrides the v6 provider default of `PREVENT`. A `gcloud projects
 undelete <project_id>` window covers the next 30 days if the destroy was
 accidental. This convention is captured in
-[ADR-0001](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md)
+[ADR-0001](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md)
 and surfaces in
-[CONTEXT.md](https://github.com/jvcorredor/homelab/blob/main/CONTEXT.md)
+[CONTEXT.md](https://github.com/RaptGroup/homelab/blob/main/CONTEXT.md)
 as the `rockingham-homelab` entry.
 
 ## DNS
@@ -88,7 +88,7 @@ The containers currently provisioned:
 
 | GSM secret ID | Purpose | Uploader |
 |---|---|---|
-| `talos-cluster-secrets` | The whole of `talos/_out/secrets.yaml` — cluster CA private key, etcd bootstrap token, friends. The one irreplaceable file in the lab. | Operator, after `talosctl gen secrets`. See [`talos/README.md`](https://github.com/jvcorredor/homelab/tree/main/talos). |
+| `talos-cluster-secrets` | The whole of `talos/_out/secrets.yaml` — cluster CA private key, etcd bootstrap token, friends. The one irreplaceable file in the lab. | Operator, after `talosctl gen secrets`. See [`talos/README.md`](https://github.com/RaptGroup/homelab/tree/main/talos). |
 | `argocd-repo-ssh-key` | Private half of the GitHub deploy key ArgoCD uses to clone this repo. | Operator, after registering the public half as a read-only deploy key on the repo. |
 | `adguard-home-admin` | JSON `{username, password_hash}` for AdGuard Home's admin user. `password_hash` is the bcrypt hash; the matching plaintext lives in the homepage-adguard-* pair below. | Operator. |
 | `homepage-adguard-username` / `homepage-adguard-password` | Plaintext credentials for the Homepage AdGuard widget (the live-status API doesn't accept the bcrypt hash). Must match the password in `adguard-home-admin`. | Operator. |
@@ -146,7 +146,7 @@ The SA key is minted by `terraform/bootstrap/`, written into one
 Kubernetes `Secret` (`gcp-sm-credentials` in the `external-secrets`
 namespace), and *every other credential in the cluster flows through
 this single bootstrap*. That property is load-bearing for the
-[ADR-0001](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md)
+[ADR-0001](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md)
 boundary — see
 [External Secrets Operator](/homelab/platform/external-secrets/) for
 the chicken-and-egg argument and the alternatives that were rejected.
@@ -203,7 +203,7 @@ What CI is wired up to consume:
 The third value is a secret rather than a variable because Terraform
 needs it to set the `billing_account` variable; the workflow refuses to
 plan without it. See
-[`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp#ci-github-actions-auth)
+[`terraform/gcp/README.md`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp#ci-github-actions-auth)
 for the operator-side wire-up commands, and
 [Automation / `terraform-plan`](/homelab/automation/ci/#terraform-plan)
 for the workflow side — what runs against this SA on each PR and how
@@ -235,16 +235,16 @@ the GCS backend can't read anything and fails. The recipe is to
 temporarily comment out the `backend "gcs"` block in `versions.tf`,
 apply locally, then uncomment and `tofu init -migrate-state` to push
 the state into the bucket. See
-[`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp#bootstrap-from-scratch)
+[`terraform/gcp/README.md`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp#bootstrap-from-scratch)
 for the full sequence.
 
 ## More
 
-[`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp)
+[`terraform/gcp/README.md`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp)
 is the operator-facing run book — billing prerequisites, the manual
 `gcloud services enable serviceusage.googleapis.com` step on a fresh
 project, the registrar handoff after the first apply, and the teardown
 flow that reverses the bootstrap. The
-[`main.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/gcp/main.tf)
+[`main.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/gcp/main.tf)
 in that directory is short enough to read end-to-end; each resource
 carries an inline comment explaining why it's shaped the way it is.
