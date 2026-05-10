@@ -12,6 +12,10 @@ dedicated project (`rockingham-homelab` by default):
   (`roles/secretmanager.secretAccessor` at the project level).
 - GCS bucket `rockingham-homelab-tfstate` holding Terraform state for
   this and any future homelab roots.
+- GSM secret `talos-cluster-secrets` (container only — versions are
+  uploaded out of band) backing up `talos/_out/secrets.yaml`. See
+  [`talos/README.md`](../../talos/README.md) for the upload + restore
+  commands.
 - Workload Identity Federation pool + GitHub OIDC provider, plus a
   plan-only CI service account (`roles/viewer`) consumed by the
   [`terraform-plan` workflow](../../.github/workflows/terraform-plan.yml).
