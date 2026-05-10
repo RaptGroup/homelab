@@ -96,6 +96,12 @@ tofu apply
 A second `tofu plan` immediately after a successful apply must show
 `No changes`. If it doesn't, that's a bug — open an issue.
 
+After apply, run `just smoke` from the repo root to sanity-check the
+cluster — `cilium connectivity test` plus a Ready=True assertion on the
+wildcard `Certificate`, the LE `ClusterIssuer`, and the `gsm`
+`ClusterSecretStore`. See the repo-root [`README.md`](../../README.md)
+for prerequisites.
+
 ## Idempotency
 
 Re-running `tofu apply` on an already-bootstrapped cluster is a no-op.
