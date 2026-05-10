@@ -36,7 +36,8 @@ VM-based design that ran on Hypercore.
   values consumed by the bootstrap Terraform; `kubernetes/apps/` is one
   directory per addon (AdGuard Home, Homepage, Hubble UI, the ARC
   controller and runner scale sets). Dropping a new directory under
-  `kubernetes/apps/` is how a new addon gets into the cluster.
+  `kubernetes/apps/` is how a new addon gets into the cluster. See the
+  [Applications index](/homelab/applications/) for the current set.
 - `docs/` — This site.
 
 ## Cluster
