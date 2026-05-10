@@ -38,6 +38,11 @@ output "tfstate_bucket" {
   value       = google_storage_bucket.tfstate.name
 }
 
+output "talos_cluster_secrets_id" {
+  description = "GSM secret ID holding talos/_out/secrets.yaml backups. Versions are uploaded out of band; see talos/README.md."
+  value       = google_secret_manager_secret.talos_cluster_secrets.secret_id
+}
+
 output "ci_workload_identity_provider" {
   description = "Full resource name of the GitHub OIDC Workload Identity Provider. Set this as the GCP_WIF_PROVIDER repository variable in GitHub Actions."
   value       = google_iam_workload_identity_pool_provider.github.name

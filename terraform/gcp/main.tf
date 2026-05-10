@@ -126,6 +126,36 @@ resource "google_storage_bucket" "tfstate" {
   depends_on = [google_project_service.enabled]
 }
 
+# --- Talos cluster secrets backup --------------------------------------------
+#
+# Container only. The cluster CA private key, etcd bootstrap token, and
+# friends inside talos/_out/secrets.yaml are the one irreplaceable file
+# in the lab — losing them means rebuilding the cluster from scratch.
+#
+# The secret VALUE is uploaded out of band via gcloud, deliberately:
+# pulling it through TF would land it in the GCS-backed state file,
+# doubling the surface, and any operator without a local secrets.yaml
+# would either need a CI-plumbed env var or trigger a spurious
+# "version will be destroyed" diff. The TF-managed container plus a
+# manual `gcloud secrets versions add` keeps state idempotent and the
+# value's provenance honest. See talos/README.md for the upload and
+# restore commands.
+resource "google_secret_manager_secret" "talos_cluster_secrets" {
+  project   = google_project.lab.project_id
+  secret_id = "talos-cluster-secrets"
+
+  labels = {
+    purpose  = "cluster-management"
+    rotation = "talosctl-gen-secrets"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on
