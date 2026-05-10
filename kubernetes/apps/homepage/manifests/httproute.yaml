@@ -2,6 +2,9 @@
 # Homepage discovery loop renders a card for itself — this is the
 # canonical example of the convention every other addon's HTTPRoute will
 # follow (PRD US 31).
+#
+# Attaches cross-namespace to the central `lab` Gateway in gateway-system
+# (issue #48); TLS terminates there with the wildcard cert.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -22,7 +25,9 @@ spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: homepage
+      namespace: gateway-system
+      name: lab
+      sectionName: https
   hostnames:
     - dashboard.lab.jackhall.dev
   rules:

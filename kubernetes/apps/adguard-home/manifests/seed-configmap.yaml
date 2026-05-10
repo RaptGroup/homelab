@@ -11,9 +11,10 @@
 #   - DNS bind 0.0.0.0:53 + admin UI bind 0.0.0.0:80
 #   - Cloudflare + Google DoH upstreams (TLS-encrypted; the lab egresses
 #     plaintext DNS otherwise)
-#   - Wildcard rewrite *.lab.jackhall.dev → 192.168.1.201 (the addons
-#     Gateway IP). This is the minimum needed for the rest of the
-#     bootstrap addons to resolve.
+#   - Wildcard rewrite *.lab.jackhall.dev → 192.168.1.201 (the central
+#     `lab` Gateway in gateway-system; issue #48). Every addon hostname
+#     resolves through this single entry — no per-host rewrites are
+#     needed as new web-exposed addons come online.
 #   - DHCP server explicitly disabled (out-of-scope per PRD #4).
 #   - One default filter list (AdGuard DNS filter). Operator can add
 #     more in the UI; further automation is deferred.

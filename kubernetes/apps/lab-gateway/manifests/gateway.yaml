@@ -1,0 +1,41 @@
+# Central `lab` Gateway. One Cilium Gateway for the whole cluster;
+# every web-exposed addon attaches its HTTPRoute here via
+# `parentRefs.namespace: gateway-system / name: lab`.
+#
+# Listener uses the wildcard hostname `*.lab.jackhall.dev`, so any
+# HTTPRoute whose `hostnames` falls under the subzone matches without
+# touching this manifest. Pinned to .201 so AdGuard Home's seed
+# wildcard rewrite (`*.lab.jackhall.dev → 192.168.1.201`) is correct
+# by construction for every addon — no per-host rewrites in the
+# AdGuard UI as new addons come online.
+#
+# `allowedRoutes.namespaces.from: All` is what makes cross-namespace
+# attachment work: HTTPRoutes in adguard-home, hubble-ui, homepage,
+# and future addons all attach without a per-namespace
+# ReferenceGrant. TLS termination uses the cluster wildcard cert from
+# cert-manager; reference-grant.yaml authorises that one cross-namespace
+# Secret ref.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: lab
+  namespace: gateway-system
+  annotations:
+    lbipam.cilium.io/ips: "192.168.1.201"
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      hostname: "*.lab.jackhall.dev"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            namespace: cert-manager
+            name: wildcard-lab-jackhall-dev-tls
+      allowedRoutes:
+        namespaces:
+          from: All

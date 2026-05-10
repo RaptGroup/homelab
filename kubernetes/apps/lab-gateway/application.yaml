@@ -1,0 +1,32 @@
+# Central `lab` Cilium Gateway. Single LB-pool IP, single Envoy proxy,
+# single TLS-cert ReferenceGrant — every web-exposed addon attaches via
+# cross-namespace `parentRefs` instead of bringing its own Gateway. See
+# issue #48 / PRD #4 for the rationale (collapses N per-addon Gateways
+# down to one, removes per-host AdGuard rewrites, frees LB IPs).
+#
+# Single-source path-only Application — there's no chart, just raw
+# Gateway + Namespace + ReferenceGrant under manifests/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gateway-system
+  source:
+    repoURL: git@github.com:jvcorredor/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/lab-gateway/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

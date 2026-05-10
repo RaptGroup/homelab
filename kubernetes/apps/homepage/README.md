@@ -13,10 +13,14 @@ kubernetes/apps/homepage/
 ├── helm-values.yaml            # jameswynn/homepage values
 └── manifests/
     ├── external-secret.yaml    # widget credentials synced from GSM
-    ├── gateway.yaml            # per-addon Cilium Gateway (wildcard cert)
-    ├── httproute.yaml          # dashboard.lab.jackhall.dev → homepage Service
-    └── reference-grant.yaml    # cross-namespace grant for the wildcard cert
+    └── httproute.yaml          # dashboard.lab.jackhall.dev → homepage Service (attaches to the central `lab` Gateway)
 ```
+
+Exposed via the central `lab` Gateway in `gateway-system` (issue #48);
+the Gateway itself is owned by `kubernetes/apps/lab-gateway/`. The
+HTTPRoute attaches cross-namespace via `parentRefs.namespace:
+gateway-system` and TLS termination + wildcard-cert handling happens
+there, not in this namespace.
 
 ## Widget credentials
 
@@ -119,28 +123,14 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
    - the `homepage` Deployment (envFrom mounts
      `homepage-widget-credentials` as `HOMEPAGE_VAR_*`),
    - the `homepage` Service on port 3000,
-   - the per-namespace Gateway pinned to `192.168.1.203` (waits for the
-     wildcard cert to be `Ready` in `cert-manager`),
-   - the `HTTPRoute` for `dashboard.lab.jackhall.dev`.
+   - the `HTTPRoute` for `dashboard.lab.jackhall.dev`, attaching to the
+     central `lab` Gateway in `gateway-system`.
 
-5. **Add the per-host AdGuard rewrite.** AdGuard's seed wildcard
-   (`*.lab.jackhall.dev → 192.168.1.201`) sends every unrouted lab
-   hostname to the AdGuard admin-UI Gateway, which only knows the SNI
-   `adguard.lab.jackhall.dev` and resets unrecognised handshakes. The
-   per-addon convention (per `kubernetes/apps/adguard-home/manifests/gateway.yaml`)
-   is to add an explicit per-host rewrite via the AdGuard UI as each
-   addon comes online:
+   AdGuard's seed wildcard rewrite (`*.lab.jackhall.dev → 192.168.1.201`)
+   resolves `dashboard.lab.jackhall.dev` to the central Gateway by
+   construction — no per-host AdGuard rewrite is needed.
 
-   - `https://adguard.lab.jackhall.dev` → **Filters → DNS rewrites → Add**
-   - Domain: `dashboard.lab.jackhall.dev`
-   - Answer: `192.168.1.203`
-
-   These per-host rewrites are not in Git — they live in the
-   `adguard-home-config` PVC. A cold restart of AdGuard re-seeds only
-   the wildcard, so any per-host rewrites need to be re-added (DR-only
-   concern; see the AdGuard README's disaster-recovery section).
-
-6. **Verify.** Once the device is using AdGuard Home for resolution
+5. **Verify.** Once the device is using AdGuard Home for resolution
    (per `kubernetes/apps/adguard-home/README.md`):
 
    ```sh
