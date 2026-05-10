@@ -23,7 +23,20 @@ VM-based design that ran on Hypercore.
   applying them to nodes in maintenance mode. See
   [`talos/README.md`](https://github.com/jvcorredor/homelab/tree/main/talos)
   for the apply and bootstrap commands.
-- `terraform/` — Infrastructure provisioning (planned).
+- `terraform/` — Two roots, split per
+  [ADR-0001](/homelab/architecture/decisions/).
+  `terraform/gcp/` owns the cloud resources (Cloud DNS zone, Secret
+  Manager secrets, the IAM service account ESO uses).
+  `terraform/bootstrap/` brings a fresh Talos cluster from "kubeconfig
+  works, nothing installed" to "ArgoCD reconciles `kubernetes/apps/`" —
+  Gateway API CRDs, Cilium, cert-manager, External Secrets Operator,
+  local-path-provisioner, and ArgoCD itself.
+- `kubernetes/` — Everything ArgoCD reconciles after bootstrap.
+  `kubernetes/bootstrap/` holds the root `Application` and the ArgoCD
+  values consumed by the bootstrap Terraform; `kubernetes/apps/` is one
+  directory per addon (AdGuard Home, Homepage, Hubble UI, the ARC
+  controller and runner scale sets). Dropping a new directory under
+  `kubernetes/apps/` is how a new addon gets into the cluster.
 - `docs/` — This site.
 
 ## Cluster
@@ -58,6 +71,12 @@ Cluster totals: 24 cores / 48 threads, 240 GB RAM, ~6.75 TB NVMe.
 
 ## Status
 
-Rebuild in progress. Talos machine configs for all six nodes are in
-place; the bootstrap and bring-up runbooks and the Terraform layer are
-next. This page will grow as the cluster comes back online.
+Phase 1 cluster is up. Talos is installed on all six nodes, both
+Terraform roots apply cleanly, and the ArgoCD root `Application` is
+reconciling the addons under
+[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps):
+AdGuard Home (LAN resolver behind the split-horizon setup), Homepage
+(the dashboard at `dashboard.lab.jackhall.dev`), Hubble UI, and the
+GitHub Actions Runner Controller plus its two runner scale sets. Phase 2
+work — Longhorn for replicated storage and the deeper observability
+stack — is deferred.
