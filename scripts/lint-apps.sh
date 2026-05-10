@@ -51,14 +51,19 @@ lint_app() {
     return 0
   fi
 
+  # Apps may use either spec.source (single) or spec.sources[] (multi-source
+  # — chart in one source, $values from this repo in another). For linting
+  # we only need the chart-bearing source.
   local repo chart version
-  repo="$(yq -r '.spec.source.repoURL // ""' "$app_file")"
-  chart="$(yq -r '.spec.source.chart // ""' "$app_file")"
-  version="$(yq -r '.spec.source.targetRevision // ""' "$app_file")"
+  repo="$(yq -r '.spec.source.repoURL // (.spec.sources // [] | map(select(.chart != null)) | .[0].repoURL // "")' "$app_file")"
+  chart="$(yq -r '.spec.source.chart // (.spec.sources // [] | map(select(.chart != null)) | .[0].chart // "")' "$app_file")"
+  version="$(yq -r '.spec.source.targetRevision // (.spec.sources // [] | map(select(.chart != null)) | .[0].targetRevision // "")' "$app_file")"
 
   if [[ -n "$chart" && -n "$repo" ]]; then
+    # kubeconform skips files without a recognised manifest extension, so
+    # mktemp's bare name silently renders an empty validation. Force .yaml.
     local rendered
-    rendered="$(mktemp)"
+    rendered="$(mktemp).yaml"
     local helm_args=(template "$app_name" "$chart" --repo "$repo" --include-crds)
     [[ -n "$version" ]] && helm_args+=(--version "$version")
     [[ -f "$values_file" ]] && helm_args+=(-f "$values_file")

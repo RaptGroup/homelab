@@ -1,0 +1,35 @@
+# Homepage (gethomepage.dev) — the homelab dashboard at
+# dashboard.lab.jackhall.dev. Multi-source: chart from
+# jameswynn.github.io/helm-charts, values from helm-values.yaml in this
+# repo. Raw Gateway/HTTPRoute/ReferenceGrant/ExternalSecret live alongside
+# under manifests/ and are picked up by the root app-of-apps directly.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homepage
+  sources:
+    - repoURL: https://jameswynn.github.io/helm-charts
+      chart: homepage
+      targetRevision: 2.1.0
+      helm:
+        valueFiles:
+          - $values/kubernetes/apps/homepage/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

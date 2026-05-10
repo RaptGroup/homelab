@@ -1,0 +1,38 @@
+# HTTPRoute for the dashboard. Annotated with gethomepage.dev/* so the
+# Homepage discovery loop renders a card for itself — this is the
+# canonical example of the convention every other addon's HTTPRoute will
+# follow (PRD US 31).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: homepage
+  namespace: homepage
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Homepage
+    gethomepage.dev/description: Cluster dashboard
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: homepage.png
+    gethomepage.dev/href: https://dashboard.lab.jackhall.dev
+spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile. Same fix as hubble-ui — see #33.
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: homepage
+  hostnames:
+    - dashboard.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: homepage
+          port: 3000
+          weight: 1
