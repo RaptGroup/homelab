@@ -5,6 +5,36 @@ Cluster dashboard at `dashboard.lab.jackhall.dev`
 addons via `gethomepage.dev/*` annotations on their `HTTPRoute`s
 (PRD #4 / issue #14).
 
+## Status-discovery overrides
+
+Homepage's K8s status lookup defaults to a pod with
+`app.kubernetes.io/name=<HTTPRoute name>` in the HTTPRoute's namespace.
+When an addon's backing Deployment differs from that — different name,
+different namespace, or both — the HTTPRoute must spell out the
+override or the card renders **NOT FOUND**:
+
+| Annotation                  | Overrides                                       |
+|-----------------------------|-------------------------------------------------|
+| `gethomepage.dev/app`       | The `app.kubernetes.io/name` label selector     |
+| `gethomepage.dev/namespace` | The namespace Homepage searches for the pod     |
+
+Live examples in this repo:
+
+- `kubernetes/apps/adguard-home/manifests/httproute.yaml` — HTTPRoute
+  is `adguard-home-ui` but the bjw-s app-template renders the
+  Deployment as `adguard-home`, so the route sets
+  `gethomepage.dev/app: adguard-home`.
+- `kubernetes/apps/hubble-ui/manifests/httproute.yaml` — the Cilium
+  chart installs the Hubble UI Deployment into `kube-system`, not the
+  `hubble-ui` namespace where this repo owns the routing layer, so the
+  route sets both `gethomepage.dev/app: hubble-ui` and
+  `gethomepage.dev/namespace: kube-system`.
+
+When adding a new addon: if the HTTPRoute's `metadata.name` matches the
+backing Deployment's `app.kubernetes.io/name` *and* both live in the
+same namespace, no override is needed. Otherwise add the annotations
+above. Reference: [Homepage K8s status discovery docs](https://gethomepage.dev/configs/kubernetes/#using-the-deployments-status).
+
 ## Shape
 
 ```

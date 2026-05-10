@@ -14,6 +14,13 @@ metadata:
     gethomepage.dev/icon: cilium.png
     gethomepage.dev/description: Cilium network flow visualizer
     gethomepage.dev/href: https://hubble.lab.jackhall.dev
+    # Status-discovery override. Homepage's default is `name=<HTTPRoute
+    # name>` in the HTTPRoute's namespace; the Hubble UI Deployment
+    # ships with Cilium and lives in kube-system, not the hubble-ui
+    # namespace where we own the routing layer. Without these overrides
+    # the dashboard card shows NOT FOUND.
+    gethomepage.dev/app: hubble-ui
+    gethomepage.dev/namespace: kube-system
 spec:
   # The Gateway API admission webhook defaults parentRef group/kind, the
   # backendRef weight, and the implicit "PathPrefix /" match block when
