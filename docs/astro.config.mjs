@@ -33,6 +33,10 @@ export default defineConfig({
           label: 'Networking',
           autogenerate: { directory: 'networking' },
         },
+        {
+          label: 'Applications',
+          autogenerate: { directory: 'applications' },
+        },
       ],
     }),
   ],
