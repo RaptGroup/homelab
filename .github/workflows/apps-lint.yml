@@ -33,8 +33,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # NF>=4 — the change must live inside kubernetes/apps/<name>/, not
+          # at the kubernetes/apps/ top level (e.g. this README).
           apps_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'kubernetes/apps/' \
-            | awk -F/ '$1=="kubernetes" && $2=="apps" && NF>=3 { print $1"/"$2"/"$3 }' \
+            | awk -F/ '$1=="kubernetes" && $2=="apps" && NF>=4 { print $1"/"$2"/"$3 }' \
             | sort -u || true)
 
           infra_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
