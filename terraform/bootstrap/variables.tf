@@ -87,7 +87,7 @@ variable "external_secrets_chart_version" {
 variable "argocd_chart_version" {
   description = "argo-cd Helm chart version (Argo Helm chart, not the Argo CD app version it ships)."
   type        = string
-  default     = "7.7.10"
+  default     = "9.5.13"
 }
 
 variable "local_path_version" {
