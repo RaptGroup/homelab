@@ -165,9 +165,19 @@ GitHub App Secret are isolated per scope.
 
 ### `arc-runners-personal`
 
-Targets `https://github.com/jvcorredor`. Workflows opt in with
-`runs-on: [self-hosted, linux, personal]`. Backed by the GitHub App
-installation on the `jvcorredor` user account.
+Targets `https://github.com/jvcorredor/homelab` — **repo-scoped**, not
+user-scoped. ARC's chart only accepts repository, organization, or
+enterprise URLs for `githubConfigUrl`; pointing it at the user URL
+makes ARC call `/orgs/jvcorredor/...` and 404. The homelab repo is the
+primary cluster-reaching consumer (CI here is what needs to dial
+`192.168.1.x`), so repo-scope at this single repo covers the actual use
+case. Workflows in any other `jvcorredor/*` repo cannot use this pool
+today; the upgrade path is migrating those repos under a free GitHub
+org and re-pointing this scale set at the org URL.
+
+Workflows opt in with `runs-on: [self-hosted, linux, personal]`. Backed
+by the GitHub App installation on the `jvcorredor` user account; the
+installation has access to (at least) the `homelab` repo.
 
 ### `arc-runners-brazostech`
 

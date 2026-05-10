@@ -13,10 +13,10 @@ metadata:
   annotations:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Runners — personal
-    gethomepage.dev/description: Self-hosted ARC pool for github.com/jvcorredor
+    gethomepage.dev/description: Self-hosted ARC pool for github.com/jvcorredor/homelab
     gethomepage.dev/group: Platform
     gethomepage.dev/icon: github.png
-    gethomepage.dev/href: https://github.com/jvcorredor
+    gethomepage.dev/href: https://github.com/jvcorredor/homelab
 spec:
   type: ExternalName
   externalName: github.com

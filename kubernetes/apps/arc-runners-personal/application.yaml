@@ -1,4 +1,6 @@
-# ARC scale set targeting github.com/jvcorredor — the personal pool.
+# ARC scale set targeting github.com/jvcorredor/homelab — the personal
+# pool. Repo-scoped rather than user-scoped because ARC doesn't support
+# user-account `githubConfigUrl`s; see helm-values.yaml for the rationale.
 #
 # Three sources because the chart and the raw extras (Namespace,
 # ExternalSecret carrying the GitHub App credentials, homepage card

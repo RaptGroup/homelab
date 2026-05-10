@@ -1,9 +1,20 @@
 # gha-runner-scale-set values for the personal pool.
-# Targets jvcorredor's user account; backed by the same `Rockingham
-# Homelab ARC` GitHub App as the brazostech pool, but a distinct
-# installation. Workflows opt in with `runs-on: [self-hosted, personal]`.
-
-githubConfigUrl: https://github.com/jvcorredor
+# Backed by the same `Rockingham Homelab ARC` GitHub App as the brazostech
+# pool, but a distinct installation (on the `jvcorredor` user account).
+# Workflows opt in with `runs-on: [self-hosted, personal]`.
+#
+# Repo-scoped — not user-scoped. ARC's chart only accepts repository,
+# organization, or enterprise URLs for `githubConfigUrl`; pointing it at
+# a user URL (`https://github.com/jvcorredor`) makes ARC call
+# `POST /orgs/jvcorredor/actions/runners/registration-token`, which 404s
+# because no org by that name exists. The closest workable scope is the
+# single repo where this scale set's primary use case lives — running
+# `kubectl`/`terraform`/`helm` against the in-cluster API from CI in this
+# very repo. If the personal pool ever needs to serve other personal
+# repos, the upgrade path is migrating them under a free GitHub org and
+# re-pointing this URL at the org. Workflows in any other `jvcorredor/*`
+# repo cannot use this pool today.
+githubConfigUrl: https://github.com/jvcorredor/homelab
 
 # Variation C — the chart consumes a pre-existing K8s Secret rather than
 # baking credentials into values. ESO populates that Secret from GSM
