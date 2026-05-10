@@ -1,0 +1,108 @@
+name: Lint apps
+
+on:
+  pull_request:
+    paths:
+      - 'kubernetes/apps/**'
+      - '.github/workflows/apps-lint.yml'
+      - 'scripts/lint-apps.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-lint-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.changed.outputs.apps }}
+      any_changed: ${{ steps.changed.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected apps
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # NF>=4 — the change must live inside kubernetes/apps/<name>/, not
+          # at the kubernetes/apps/ top level (e.g. this README).
+          apps_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'kubernetes/apps/' \
+            | awk -F/ '$1=="kubernetes" && $2=="apps" && NF>=4 { print $1"/"$2"/"$3 }' \
+            | sort -u || true)
+
+          infra_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+              '.github/workflows/apps-lint.yml' 'scripts/lint-apps.sh' \
+            | head -n1 || true)
+
+          if [[ -n "$apps_changed" ]]; then
+            changed="$apps_changed"
+            echo "Apps with changes:"
+          elif [[ -n "$infra_changed" ]]; then
+            # Lint infra changed — re-validate every app to prove the pipeline
+            # still works.
+            if [[ -d kubernetes/apps ]]; then
+              changed=$(find kubernetes/apps -mindepth 1 -maxdepth 1 -type d | sort || true)
+            else
+              changed=""
+            fi
+            echo "Lint infra changed; linting all apps:"
+          else
+            changed=""
+          fi
+
+          if [[ -z "$changed" ]]; then
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+            echo 'apps=[]' >> "$GITHUB_OUTPUT"
+            echo "(none)"
+          else
+            json=$(printf '%s\n' "$changed" | jq -R -s -c 'split("\n") | map(select(length>0))')
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            echo "apps=$json" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "$changed"
+          fi
+
+  lint:
+    needs: detect
+    if: needs.detect.outputs.any_changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.detect.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.0
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          version=v0.6.7
+          tmp=$(mktemp -d)
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${version}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C "$tmp"
+          sudo install -m 0755 "$tmp/kubeconform" /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          sudo curl -fsSL -o /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Lint ${{ matrix.app }}
+        run: scripts/lint-apps.sh "${{ matrix.app }}"
