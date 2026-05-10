@@ -19,11 +19,14 @@ from there.
 
 When `spec.source.repoURL` points back at this repo (path-based addons
 that ship raw manifests instead of a chart), use the SSH form
-`git@github.com:jvcorredor/homelab.git`. The repo is private; ArgoCD
-authenticates with the deploy key ESO syncs from GSM into a labelled
-`repository` Secret in the argocd namespace. URLs are matched verbatim,
-so an HTTPS form here will fail with `authentication required` even
-though the credential is in place.
+`git@github.com:RaptGroup/homelab.git`. The repo is currently public, so
+authenticated clones aren't strictly required — the SSH path is retained
+for forward-compat with any future private repo (e.g. a temporarily-private
+fork during an incident, or a separate secrets repo). ArgoCD authenticates
+with the deploy key ESO syncs from GSM into a labelled `repository` Secret
+in the argocd namespace. URLs are matched verbatim, so an HTTPS form here
+will skip the credential even though it's in place — keep the SSH form
+consistent across every Application.
 
 ## Linting
 

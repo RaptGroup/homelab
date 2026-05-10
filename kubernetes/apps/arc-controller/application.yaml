@@ -26,10 +26,10 @@ spec:
       helm:
         valueFiles:
           - $values/kubernetes/apps/arc-controller/helm-values.yaml
-    - repoURL: git@github.com:jvcorredor/homelab.git
+    - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       ref: values
-    - repoURL: git@github.com:jvcorredor/homelab.git
+    - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       path: kubernetes/apps/arc-controller/manifests
   syncPolicy:

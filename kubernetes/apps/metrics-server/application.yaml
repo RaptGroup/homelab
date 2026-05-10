@@ -30,7 +30,7 @@ spec:
       helm:
         valueFiles:
           - $values/kubernetes/apps/metrics-server/helm-values.yaml
-    - repoURL: git@github.com:jvcorredor/homelab.git
+    - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       ref: values
   syncPolicy:

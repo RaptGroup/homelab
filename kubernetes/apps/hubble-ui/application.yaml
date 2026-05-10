@@ -15,7 +15,7 @@ spec:
     server: https://kubernetes.default.svc
     namespace: hubble-ui
   source:
-    repoURL: git@github.com:jvcorredor/homelab.git
+    repoURL: git@github.com:RaptGroup/homelab.git
     targetRevision: main
     path: kubernetes/apps/hubble-ui/manifests
   syncPolicy:
