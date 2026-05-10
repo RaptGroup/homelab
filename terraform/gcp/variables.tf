@@ -68,3 +68,15 @@ variable "tfstate_bucket_location" {
   type        = string
   default     = "US-CENTRAL1"
 }
+
+variable "github_repository" {
+  description = "owner/repo of the GitHub repository allowed to impersonate the CI service account via Workload Identity Federation. Locks the WIF provider to a single repo so an OIDC token issued elsewhere cannot reach this project."
+  type        = string
+  default     = "jvcorredor/homelab"
+}
+
+variable "tf_ci_sa_id" {
+  description = "Service account ID (the part before @) for the plan-only CI service account used by the terraform-plan workflow."
+  type        = string
+  default     = "tf-ci-plan"
+}

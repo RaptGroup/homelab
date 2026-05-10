@@ -12,6 +12,9 @@ dedicated project (`rockingham-homelab` by default):
   (`roles/secretmanager.secretAccessor` at the project level).
 - GCS bucket `rockingham-homelab-tfstate` holding Terraform state for
   this and any future homelab roots.
+- Workload Identity Federation pool + GitHub OIDC provider, plus a
+  plan-only CI service account (`roles/viewer`) consumed by the
+  [`terraform-plan` workflow](../../.github/workflows/terraform-plan.yml).
 
 State lives in `gs://rockingham-homelab-tfstate/terraform/gcp/` so local
 and CI applies share the same state. The bucket is created by this same
@@ -125,14 +128,53 @@ service accounts, and any GSM secrets created later with it. There is a
 30-day soft-delete window during which `gcloud projects undelete
 <project_id>` can recover it.
 
+## CI: GitHub Actions auth
+
+`.github/workflows/terraform-plan.yml` runs on GitHub-hosted runners
+(not in-cluster ARC) and authenticates to GCP via Workload Identity
+Federation — no JSON keys. This root creates the federation:
+
+- A pool `github-actions` trusting GitHub's OIDC issuer.
+- A provider `github` in that pool, with an `attribute_condition`
+  that rejects any token whose `repository` claim isn't
+  `var.github_repository`. A leaked OIDC token from another repo
+  cannot reach this project.
+- A service account (`tf-ci-plan` by default) with `roles/viewer` on
+  the project — sufficient for `tofu plan` to read state and the live
+  resource graph, structurally insufficient to apply.
+- A `roles/iam.workloadIdentityUser` binding letting the GitHub repo
+  impersonate that SA.
+
+After the first apply, wire the workflow up by setting these GitHub
+**Actions repository variables** (Settings → Secrets and variables →
+Actions → Variables) to the values printed by `tofu output`:
+
+| Repository variable | Value                                                    |
+|---------------------|----------------------------------------------------------|
+| `GCP_WIF_PROVIDER`  | `tofu output -raw ci_workload_identity_provider`         |
+| `GCP_CI_SA`         | `tofu output -raw ci_service_account_email`              |
+
+And one **Actions secret**, so `terraform plan` can satisfy the
+`billing_account` variable in CI without a tracked tfvars file:
+
+| Secret                | Value                                                  |
+|-----------------------|--------------------------------------------------------|
+| `GCP_BILLING_ACCOUNT` | The same billing account ID used in `terraform.tfvars` |
+
+The workflow never runs `tofu apply` — apply stays operator-only on a
+workstation with ADC. See `.github/workflows/terraform-plan.yml` for
+the full workflow.
+
 ## Outputs
 
-| Output                   | Used by                                                          |
-|--------------------------|------------------------------------------------------------------|
-| `lab_zone_name_servers`  | Operator → registrar (manual)                                    |
-| `lab_zone_name`          | `terraform/bootstrap/` cert-manager `ClusterIssuer` config       |
-| `cert_manager_sa_email`  | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
-| `eso_sa_email`           | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
-| `project_id`             | Anything that needs to qualify GSM secret refs                   |
-| `project_number`         | Some GCP APIs / IAM bindings require the numeric form            |
-| `tfstate_bucket`         | Other TF roots' backend blocks (hardcoded; this is just a sanity output) |
+| Output                          | Used by                                                          |
+|---------------------------------|------------------------------------------------------------------|
+| `lab_zone_name_servers`         | Operator → registrar (manual)                                    |
+| `lab_zone_name`                 | `terraform/bootstrap/` cert-manager `ClusterIssuer` config       |
+| `cert_manager_sa_email`         | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
+| `eso_sa_email`                  | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
+| `project_id`                    | Anything that needs to qualify GSM secret refs                   |
+| `project_number`                | Some GCP APIs / IAM bindings require the numeric form            |
+| `tfstate_bucket`                | Other TF roots' backend blocks (hardcoded; this is just a sanity output) |
+| `ci_workload_identity_provider` | `GCP_WIF_PROVIDER` Actions repository variable                   |
+| `ci_service_account_email`      | `GCP_CI_SA` Actions repository variable                          |
