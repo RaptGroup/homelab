@@ -57,9 +57,39 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
 
 1. **Decide the AdGuard credential first.** `kubernetes/apps/adguard-home/`
    establishes the AdGuard admin user; the same plaintext password feeds
-   step 2 below. See that addon's README for the bcrypt step.
+   step 3 below. See that addon's README for the bcrypt step.
 
-2. **Upload the three values to GSM.** The containers are pre-provisioned
+2. **Mint the ArgoCD readonly-account token.** The `homepage` local
+   account and its `role:readonly` RBAC binding are declared in
+   `kubernetes/bootstrap/argocd/values.yaml` (`configs.cm.accounts.homepage`
+   + `configs.rbac.policy.csv`), so the chart provisions both on every
+   reconcile. The token itself is *not* in Git — it's minted out-of-band
+   against the live cluster, since ArgoCD only stores the account
+   declaration, not its credentials:
+
+   ```sh
+   argocd login argocd.lab.jackhall.dev
+   argocd account generate-token --account homepage
+   ```
+
+   Sanity check first if the account doesn't appear in the UI's User
+   Info page (e.g. right after a fresh bootstrap, before Argo has
+   reconciled the chart):
+
+   ```sh
+   kubectl -n argocd get cm argocd-cm -o yaml | grep accounts.homepage
+   # → accounts.homepage: apiKey
+   # → accounts.homepage.enabled: "true"
+   kubectl -n argocd get cm argocd-rbac-cm -o yaml | grep -A1 policy.csv
+   # → policy.csv: |
+   # →   g, homepage, role:readonly
+   ```
+
+   The `apiKey` capability (vs. `login`) is deliberate: the account can
+   mint API tokens but cannot log in to the UI, bounding a leaked token
+   to API reads only.
+
+3. **Upload the three values to GSM.** The containers are pre-provisioned
    by `terraform/gcp/`:
 
    ```sh
@@ -83,7 +113,7 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
    `homepage-widget-credentials` K8s Secret in the `homepage` namespace
    within `refreshInterval` (1h).
 
-3. **Sync the Application.** ArgoCD picks `homepage` up from the root
+4. **Sync the Application.** ArgoCD picks `homepage` up from the root
    app-of-apps automatically. First sync brings up:
 
    - the `homepage` Deployment (envFrom mounts
@@ -93,7 +123,7 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
      `Ready` in `cert-manager`),
    - the `HTTPRoute` for `dashboard.lab.jackhall.dev`.
 
-4. **Verify.** Once the device is using AdGuard Home for resolution
+5. **Verify.** Once the device is using AdGuard Home for resolution
    (per `kubernetes/apps/adguard-home/README.md`):
 
    ```sh
@@ -105,11 +135,20 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
 
 ## Rotating credentials
 
-To rotate the ArgoCD token: generate a new readonly-account token in
-ArgoCD, then `gcloud secrets versions add homepage-argocd-token …` with
-the new value. ESO picks it up on the next refresh and the Homepage
-pod's env vars update on the next pod restart (chart `restartPods`
-helper or a manual rollout).
+To rotate the ArgoCD token: mint a new one against the live cluster,
+then push it to GSM:
+
+```sh
+argocd login argocd.lab.jackhall.dev
+argocd account generate-token --account homepage | tr -d '\n' | \
+  gcloud secrets versions add homepage-argocd-token \
+    --project rockingham-homelab --data-file=-
+```
+
+ESO picks up the new value on the next refresh and the Homepage pod's
+env vars update on the next pod restart (chart `restartPods` helper or a
+manual rollout). Old tokens stay valid until explicitly revoked via
+`argocd account delete-token --account homepage <id>`.
 
 To rotate the AdGuard password: rotate the plaintext password in
 AdGuard's admin UI, recompute the bcrypt hash, then update **both**
@@ -123,5 +162,5 @@ bcrypt recipe.
 Homepage is stateless — its config is rendered from `helm-values.yaml`
 on every pod start and the dashboard's data comes from live cluster
 queries plus the widget API calls. Re-running the first-install flow
-(steps 2–4 above) is the entire DR procedure; the only state worth
+(steps 2–5 above) is the entire DR procedure; the only state worth
 keeping is the GSM credentials, which are already off-machine.
