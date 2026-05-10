@@ -58,6 +58,21 @@ output "adguard_home_admin_secret_id" {
   value       = google_secret_manager_secret.adguard_home_admin.secret_id
 }
 
+output "homepage_adguard_username_secret_id" {
+  description = "GSM secret ID holding the plaintext AdGuard admin username consumed by Homepage's AdGuard widget. Versions are uploaded out of band; see kubernetes/apps/homepage/README.md."
+  value       = google_secret_manager_secret.homepage_adguard_username.secret_id
+}
+
+output "homepage_adguard_password_secret_id" {
+  description = "GSM secret ID holding the plaintext AdGuard admin password consumed by Homepage's AdGuard widget. Same password as adguard-home-admin (which stores its bcrypt hash). Versions are uploaded out of band; see kubernetes/apps/homepage/README.md."
+  value       = google_secret_manager_secret.homepage_adguard_password.secret_id
+}
+
+output "homepage_argocd_token_secret_id" {
+  description = "GSM secret ID holding the ArgoCD readonly API token consumed by Homepage's ArgoCD widget. Versions are uploaded out of band; see kubernetes/apps/homepage/README.md."
+  value       = google_secret_manager_secret.homepage_argocd_token.secret_id
+}
+
 output "ci_workload_identity_provider" {
   description = "Full resource name of the GitHub OIDC Workload Identity Provider. Set this as the GCP_WIF_PROVIDER repository variable in GitHub Actions."
   value       = google_iam_workload_identity_pool_provider.github.name
