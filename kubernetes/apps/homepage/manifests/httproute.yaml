@@ -15,9 +15,14 @@ metadata:
     gethomepage.dev/icon: homepage.png
     gethomepage.dev/href: https://dashboard.lab.jackhall.dev
 spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile. Same fix as hubble-ui — see #33.
   parentRefs:
-    - name: homepage
-      namespace: homepage
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: homepage
   hostnames:
     - dashboard.lab.jackhall.dev
   rules:
@@ -26,5 +31,8 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: homepage
+        - group: ""
+          kind: Service
+          name: homepage
           port: 3000
+          weight: 1
