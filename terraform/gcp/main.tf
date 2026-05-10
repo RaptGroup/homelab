@@ -353,18 +353,19 @@ resource "google_secret_manager_secret" "homepage_argocd_token" {
 
 # ARC (actions-runner-controller) GitHub App credentials. Four containers
 # pulled by the per-pool ExternalSecrets in
-# kubernetes/apps/arc-runners-{personal,brazostech}/manifests/external-secret.yaml
+# kubernetes/apps/arc-runners-{raptgroup,brazostech}/manifests/external-secret.yaml
 # and projected into a pre-defined K8s Secret consumed by the
 # gha-runner-scale-set chart in Variation C. One App
-# (`Rockingham Homelab ARC`) with two installations: jvcorredor user +
-# brazostech org. **Not** installed on Scale Computing — that boundary is
-# enforced server-side by GitHub. The App ID and private key are shared
-# across both pools; only the installation ID differs.
+# (`Rockingham Homelab ARC`) with two installations, both org-scoped:
+# RaptGroup (the user's personal-projects org) and brazostech.
+# **Not** installed on Scale Computing — that boundary is enforced
+# server-side by GitHub. The App ID and private key are shared across
+# both pools; only the installation ID differs.
 #
 # Upload (after `tofu apply` here):
 #
 #   echo -n '<APP_ID>'                | gcloud secrets versions add arc-app-id                     --project rockingham-homelab --data-file=-
-#   echo -n '<JVCORREDOR_INSTALL_ID>' | gcloud secrets versions add arc-installation-id-jvcorredor --project rockingham-homelab --data-file=-
+#   echo -n '<RAPTGROUP_INSTALL_ID>'  | gcloud secrets versions add arc-installation-id-raptgroup  --project rockingham-homelab --data-file=-
 #   echo -n '<BRAZOSTECH_INSTALL_ID>' | gcloud secrets versions add arc-installation-id-brazostech --project rockingham-homelab --data-file=-
 #   gcloud secrets versions add arc-app-private-key \
 #     --project rockingham-homelab \
@@ -406,9 +407,9 @@ resource "google_secret_manager_secret" "arc_app_private_key" {
   depends_on = [google_project_service.enabled]
 }
 
-resource "google_secret_manager_secret" "arc_installation_id_jvcorredor" {
+resource "google_secret_manager_secret" "arc_installation_id_raptgroup" {
   project   = google_project.lab.project_id
-  secret_id = "arc-installation-id-jvcorredor"
+  secret_id = "arc-installation-id-raptgroup"
 
   labels = {
     purpose = "addon-credential"
