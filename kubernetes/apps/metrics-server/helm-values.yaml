@@ -1,0 +1,34 @@
+# metrics-server values, tuned for Talos.
+#
+# `defaultArgs` is the full arg list (the chart concatenates `defaultArgs`
+# + `args`). Overriding it instead of appending via `args:` keeps the
+# resulting kubelet-flag set explicit in Git — no need to read the chart
+# to know what's actually being passed. Two Talos-specific changes vs.
+# the upstream defaults:
+#
+# 1. `--kubelet-insecure-tls`. Talos issues kubelet serving certs from
+#    its own machine-CA, not from the cluster CA that metrics-server
+#    validates against. Standard workaround on bare-metal Talos clusters
+#    (same compromise bjw-s/cluster-template uses); the alternative is
+#    plumbing the Talos CA bundle into metrics-server, which is more
+#    surface than the read-only scrape warrants.
+#
+# 2. `--kubelet-preferred-address-types=InternalIP,Hostname`. Chart
+#    default also lists `ExternalIP` in the middle; on this LAN-only
+#    cluster no node has an ExternalIP, so dropping it removes a dead
+#    lookup step and matches what actually exists on Node objects.
+defaultArgs:
+  - --cert-dir=/tmp
+  - --kubelet-insecure-tls
+  - --kubelet-preferred-address-types=InternalIP,Hostname
+  - --kubelet-use-node-status-port
+  - --metric-resolution=15s
+
+# Chart already defaults to 100m / 200Mi requests; restated here so the
+# footprint is visible at the addon level without having to look at the
+# chart. No limits — metrics-server scales with cluster size and
+# clipping it under load loses metrics for HPAs / `kubectl top`.
+resources:
+  requests:
+    cpu: 100m
+    memory: 200Mi
