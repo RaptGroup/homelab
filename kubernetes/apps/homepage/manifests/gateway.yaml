@@ -1,0 +1,26 @@
+# Cilium Gateway for dashboard.lab.jackhall.dev. Listener terminates TLS
+# using the cluster-wide wildcard secret in cert-manager namespace; the
+# ReferenceGrant under reference-grant.yaml authorises the cross-namespace
+# secret reference (the Gateway API pattern).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: homepage
+  namespace: homepage
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: dashboard.lab.jackhall.dev
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            name: wildcard-lab-jackhall-dev-tls
+            namespace: cert-manager

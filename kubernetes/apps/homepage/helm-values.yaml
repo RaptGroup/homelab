@@ -1,0 +1,110 @@
+# Homepage chart values. Dashboard settings ONLY — service entries are
+# never listed here. Each addon advertises itself via gethomepage.dev/*
+# annotations on its HTTPRoute (the Homepage chart's default ClusterRole
+# already grants list/get on httproutes + gateways cluster-wide).
+#
+# To wire credentials for live-status widgets without putting secrets in
+# Git: ExternalSecret resources under manifests/ sync the AdGuard admin
+# password and the ArgoCD readonly API token from GSM into the
+# homepage-widget-credentials Secret. envFrom below mounts that Secret as
+# HOMEPAGE_VAR_* env vars; addon HTTPRoute annotations reference the
+# values via {{HOMEPAGE_VAR_…}} substitutions.
+
+enableRbac: true
+
+serviceAccount:
+  name: homepage
+  create: true
+
+# gethomepage.dev/* annotations documenting the convention by example.
+# Homepage's own discovery loop (with config.kubernetes.gateway: true)
+# scans HTTPRoutes — see manifests/httproute.yaml for the discovery copy
+# of these annotations. They are mirrored here per PRD US 31 so the
+# pattern is visible on the primary Service of every addon, not only on
+# its routing object.
+service:
+  main:
+    annotations:
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/name: Homepage
+      gethomepage.dev/description: Cluster dashboard
+      gethomepage.dev/group: Platform
+      gethomepage.dev/icon: homepage.png
+      gethomepage.dev/href: https://dashboard.lab.jackhall.dev
+
+# Default chart ClusterRole already covers ingresses, httproutes, gateways,
+# namespaces, pods, nodes, and metrics. Acceptance criterion calls out
+# services explicitly — added here so a Service-discovery mode (current or
+# future) doesn't need a chart bump to start working.
+extraClusterRoles:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+
+# Gateway API is the only ingress path on this cluster (Cilium gateway).
+# No NGINX/Traefik in scope; chart's ingress: section stays disabled.
+ingress:
+  main:
+    enabled: false
+
+env:
+  - name: HOMEPAGE_ALLOWED_HOSTS
+    value: dashboard.lab.jackhall.dev
+
+envFrom:
+  - secretRef:
+      name: homepage-widget-credentials
+
+config:
+  kubernetes:
+    mode: cluster
+    ingress: false
+    traefik: false
+    gateway: true
+
+  # Empty list — every service card on the dashboard comes from
+  # gethomepage.dev/* annotations on each addon's HTTPRoute. Maintaining a
+  # parallel list here would defeat the auto-discovery convention (PRD US 14).
+  services: []
+
+  bookmarks: []
+
+  # Dashboard-level widgets only (cluster summary + search). Per-service
+  # widgets like adguard / argocd attach via HTTPRoute annotations on
+  # those addons.
+  widgets:
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: rockingham
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+    - search:
+        provider: duckduckgo
+        target: _blank
+
+  docker: {}
+
+  settingsString: |
+    title: Rockingham Homelab
+    headerStyle: boxed
+    layout:
+      Cluster:
+        style: row
+        columns: 4
+      Networking:
+        style: row
+        columns: 4
+      Platform:
+        style: row
+        columns: 4
