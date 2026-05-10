@@ -57,6 +57,31 @@ the three values into a single K8s Secret
 `githubConfigSecret`, so credential rotation is a GSM update plus a
 listener-pod restart — no chart change needed.
 
+## Installation scope (least privilege)
+
+The RaptGroup installation runs with `repository_selection: selected`, not
+`all`. The install token the listener mints can only mint repo tokens for
+the allowlisted repos, which caps the blast radius if the App's private
+key ever leaked.
+
+Current allowlist:
+
+| Repo                       | Why                                              |
+|----------------------------|--------------------------------------------------|
+| `RaptGroup/homelab`        | Controls the cluster; default destination for future cluster-reaching workflows. |
+| `RaptGroup/zipmenu-public` | Has a live `runs-on: self-hosted` workflow (`amplify-publish.yml`). |
+
+Adding a new repo means doing the GitHub UI step *at the same time* as the
+workflow change — otherwise the runner picks up the job and fails on token
+mint:
+
+1. github.com → RaptGroup org → Settings → GitHub Apps → `Rockingham
+   Homelab ARC` → Configure → Repository access → Only select repositories
+   → add the repo.
+2. Land the workflow change with `runs-on: [self-hosted, raptgroup]`.
+3. No ArgoCD reconcile is needed — the listener re-uses the existing App
+   credentials.
+
 ## Labels and `runs-on:`
 
 The chart auto-registers `self-hosted` and the scale set's release name
