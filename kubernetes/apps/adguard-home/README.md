@@ -15,34 +15,30 @@ kubernetes/apps/adguard-home/
     ├── dns-service.yaml        # LoadBalancer Service pinned to 192.168.1.200 (UDP/TCP 53)
     ├── external-secret.yaml    # admin user/bcrypt-hash synced from GSM
     ├── seed-configmap.yaml     # AdGuardHome.yaml template rendered by the init container
-    ├── gateway.yaml            # per-addon Cilium Gateway pinned to 192.168.1.201
-    ├── httproute.yaml          # adguard.lab.jackhall.dev → admin Service
-    └── reference-grant.yaml    # cross-namespace grant for the wildcard cert in cert-manager
+    └── httproute.yaml          # adguard.lab.jackhall.dev → admin Service (attaches to the central `lab` Gateway)
 ```
 
 The DNS Service is the public face on the LAN (`192.168.1.200`); the
 admin UI is reached at `https://adguard.lab.jackhall.dev` once the
 operator's device is using AdGuard Home itself for resolution.
+TLS termination + routing happens at the central `lab` Gateway
+defined in `kubernetes/apps/lab-gateway/`; AdGuard's HTTPRoute
+attaches cross-namespace via `parentRefs.namespace: gateway-system`
+(issue #48).
 
 ## LB IP allocation
 
 | Resource                                | IP               |
 |-----------------------------------------|------------------|
 | AdGuard Home DNS                        | `192.168.1.200`  |
-| AdGuard Home admin-UI Gateway           | `192.168.1.201`  |
+| Central `lab` Gateway                   | `192.168.1.201`  |
 
 Both come out of the `.200`–`.230` Cilium pool from
 `terraform/bootstrap`. The Gateway pin matters because AdGuard's seed
 wildcard rewrite `*.lab.jackhall.dev → 192.168.1.201` needs a stable
-target; without the pin, Cilium would hand out a different IP on
-restart and the rewrite would point at nothing.
-
-Following the convention `kubernetes/apps/hubble-ui/` established,
-each addon brings its own per-namespace Gateway (`from: Same`) rather
-than attaching to a shared one. Other addons therefore land on
-different pool IPs and need a per-host rewrite added in the AdGuard
-UI (`adguard.lab.jackhall.dev` → AdGuard admin → DNS settings →
-DNS rewrites).
+target; with the central Gateway claiming `.201`, every addon's
+hostname resolves through that single entry without per-host
+rewrites in the AdGuard UI.
 
 ## Source IP and per-client features
 
@@ -98,9 +94,9 @@ domains) are unaffected.
      credential),
    - the admin UI Service,
    - the DNS LB Service on `.200`,
-   - the Gateway on `.201` (waits for the wildcard cert to be `Ready`
-     in `cert-manager`),
-   - the `HTTPRoute` for `adguard.lab.jackhall.dev`.
+   - the `HTTPRoute` for `adguard.lab.jackhall.dev`, attaching to the
+     central `lab` Gateway in `gateway-system` (the Gateway itself is
+     deployed by `kubernetes/apps/lab-gateway/`).
 
 4. **Point a device at `192.168.1.200`.** macOS / iOS / Windows / Linux
    all expose a manual DNS field; consult per-OS recipes (TBD: PRD US
@@ -127,13 +123,14 @@ Seeded:
 - Admin user with the bcrypt hash from GSM
 - Admin UI on `0.0.0.0:80`, DNS on `0.0.0.0:53`
 - DoH upstreams (Cloudflare + Google) with plaintext bootstrap
-- Wildcard rewrite `*.lab.jackhall.dev → 192.168.1.201`
+- Wildcard rewrite `*.lab.jackhall.dev → 192.168.1.201` (the central
+  `lab` Gateway). One entry covers every web-exposed addon — no
+  per-host rewrites needed as new addons come online.
 - Default AdGuard DNS filter blocklist
 - DHCP server explicitly disabled (out-of-scope per PRD #4)
 
 Manual via the UI (not in Git):
 
-- Per-host rewrites beyond the wildcard
 - Additional blocklists / allowlists
 - Client-specific filtering rules
 - Schedule / safe-search / parental controls
@@ -144,6 +141,7 @@ If you need to re-seed (corrupt config, fresh PVC), delete the
 ## Disaster recovery
 
 Re-run the first-install flow above; the only state worth keeping is
-the GSM credential (already off-machine) and any per-host rewrites the
-operator added through the UI. The query log and stats live on the
-`adguard-home-work` PVC and are accepted-loss in Phase 1 storage.
+the GSM credential (already off-machine). The query log and stats
+live on the `adguard-home-work` PVC and are accepted-loss in Phase 1
+storage. The seed wildcard rewrite covers every addon, so there are
+no per-host rewrite entries to restore.

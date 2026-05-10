@@ -1,6 +1,7 @@
 # adguard.lab.jackhall.dev → AdGuard Home admin UI (chart-rendered
-# Service `adguard-home` in this namespace). TLS terminates at the
-# parent Gateway with the wildcard cert; the hop into the pod is
+# Service `adguard-home` in this namespace). Attaches cross-namespace
+# to the central `lab` Gateway in gateway-system (issue #48); TLS
+# terminates there with the wildcard cert. The hop into the pod is
 # plaintext on port 80 (same model the bootstrap uses for argocd).
 #
 # Carries the gethomepage.dev/* annotations Homepage (#26) discovers
@@ -40,7 +41,8 @@ spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: adguard-home
+      namespace: gateway-system
+      name: lab
       sectionName: https
   hostnames:
     - adguard.lab.jackhall.dev
