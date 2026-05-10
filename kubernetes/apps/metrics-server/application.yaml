@@ -1,0 +1,43 @@
+# metrics-server — Kubernetes Metrics API (resource metrics only).
+#
+# Backs `kubectl top` and the Homepage cluster widget. Distinct from
+# kube-prometheus-stack (PRD #4 observability split): this is the
+# single-purpose extension API server that scrapes kubelet's
+# /metrics/resource endpoint, not a full Prometheus stack. Tiny
+# footprint, no PVC, no scrape config — safe to land independently of
+# the eventual kube-prometheus-stack learning-deep-dive pass.
+#
+# Multi-source layout (mirrors kubernetes/apps/arc-controller/):
+#   - Source 1: metrics-server chart from upstream Helm repo.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives
+#     in Git alongside the Application.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metrics-server
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/metrics-server/
+      chart: metrics-server
+      targetRevision: 3.13.0
+      helm:
+        valueFiles:
+          - $values/kubernetes/apps/metrics-server/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
