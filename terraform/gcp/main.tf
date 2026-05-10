@@ -5,6 +5,15 @@ provider "google" {
 
 locals {
   required_apis = [
+    # serviceusage is the API that tofu itself calls to read/manage every
+    # other google_project_service resource. It must be enabled before any
+    # plan or apply that authenticates via a SA whose quota project is this
+    # project (CI does — local ADC usually routes quota through the user's
+    # personal default project, which masks this in dev). On a fresh GCP
+    # account, enable it once by hand:
+    #   gcloud services enable serviceusage.googleapis.com \
+    #     --project=rockingham-homelab
+    "serviceusage.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "dns.googleapis.com",
