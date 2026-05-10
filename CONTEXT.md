@@ -219,3 +219,48 @@ directories under it are picked up automatically. Not `ApplicationSet`.
 Per-addon directory layout: an `application.yaml` (the ArgoCD
 `Application`), a `helm-values.yaml`, and an optional `manifests/` for raw
 extras like `Gateway`, `HTTPRoute`, or `ExternalSecret`.
+
+## CI/CD
+
+### `gcp` (GitHub deployment environment)
+
+The protected GitHub environment that gates apply credentials for
+`terraform/gcp/`. Carries deployment-branch restriction = `main` and
+required reviewer = repo owner. The
+[`terraform-apply.yml`](.github/workflows/terraform-apply.yml) workflow's
+`apply` job declares `environment: gcp`; GitHub holds the job in
+`Waiting` until a reviewer approves, and the OIDC token issued for
+the job carries `environment: gcp` as a claim that GCP's WIF binding
+keys on. Created manually in the GitHub UI — there is no Terraform
+resource for "GitHub deployment environment" in this repo. See
+ADR-0004.
+
+### `tf-ci-plan` and `tf-ci-apply` (CI service accounts)
+
+The two GCP service accounts CI uses to talk to the
+`rockingham-homelab` project. Provisioned by `terraform/gcp/`:
+
+- **`tf-ci-plan`** — `roles/viewer` on the project. Consumed by
+  `terraform-plan.yml` (PR plans) and the `plan` job of
+  `terraform-apply.yml` (apply-time re-plan). Impersonable from any
+  workflow job whose OIDC token's `repository` claim matches
+  `var.github_repository`.
+- **`tf-ci-apply`** — `roles/owner` on the project. Consumed by the
+  `apply` job of `terraform-apply.yml`. Impersonable only from a job
+  that declares `environment: gcp`; combined with the provider's
+  repo lock, this is equivalent to the
+  `repo:RaptGroup/homelab:environment:gcp` selector. Reachable only
+  after a reviewer approves the deployment in the GitHub UI.
+
+Plan and apply credentials are deliberately separate so a token
+compromised mid-plan cannot apply.
+
+### Environment-per-root convention
+
+GitHub deployment environment names mirror Terraform root names:
+`gcp` ↔ `terraform/gcp/`. If the `bootstrap` root grows a CI apply
+in the future, it gets a `bootstrap` environment with its own
+approver list, its own apply SA, and its own
+`terraform-apply-bootstrap.yml` workflow. One environment per root
+keeps approver policies decoupled across roots that have very
+different blast radii.

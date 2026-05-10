@@ -477,6 +477,12 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
     "attribute.ref"        = "assertion.ref"
     "attribute.actor"      = "assertion.actor"
+    # `environment` is only present on OIDC tokens issued for a job that
+    # declares `environment: <name>` in its workflow definition. Plan-only
+    # jobs omit it. The apply SA's workloadIdentityUser binding below pins
+    # to a specific environment value, so a plan-only token (no
+    # `environment` claim) can never satisfy that principalSet.
+    "attribute.environment" = "assertion.environment"
   }
 
   attribute_condition = "assertion.repository == \"${var.github_repository}\""
@@ -509,4 +515,43 @@ resource "google_service_account_iam_member" "tf_ci_wif_user" {
   service_account_id = google_service_account.tf_ci.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
+}
+
+# Apply SA. roles/owner because tofu apply has to (re)create everything in
+# this root, including the WIF pool/provider, project IAM bindings, and the
+# tfstate bucket — narrower predefined roles either don't cover all of those
+# or split them across so many bindings that the boundary stops being
+# meaningful at homelab scale. The blast radius is bounded the other way: by
+# the workloadIdentityUser binding below, which only lets workflow jobs that
+# declare `environment: <var.ci_apply_environment>` impersonate this SA. The
+# `gcp` GitHub environment carries deployment-branch restrictions and a
+# required reviewer (set in the GitHub UI), so reaching this SA from CI
+# requires (a) a push to main, (b) a workflow that opts into the
+# environment, and (c) operator approval at run time. See ADR-0004.
+resource "google_service_account" "tf_ci_apply" {
+  project      = google_project.lab.project_id
+  account_id   = var.tf_ci_apply_sa_id
+  display_name = "Terraform CI apply"
+  description  = "Used by .github/workflows/terraform-apply.yml. roles/owner on the project; impersonable only from a job declaring `environment: ${var.ci_apply_environment}`."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_project_iam_member" "tf_ci_apply_owner" {
+  project = google_project.lab.project_id
+  role    = "roles/owner"
+  member  = "serviceAccount:${google_service_account.tf_ci_apply.email}"
+}
+
+# Env-scoped impersonation. The principalSet is keyed on the
+# `environment` claim, and the provider's attribute_condition already
+# pins repository to var.github_repository — combined, this is
+# equivalent to `repo:${var.github_repository}:environment:${var.ci_apply_environment}`.
+# Tokens minted from a plan-style job (no `environment` claim) will not
+# match this set, so the apply SA cannot be impersonated from
+# terraform-plan.yml or any other workflow that omits the environment.
+resource "google_service_account_iam_member" "tf_ci_apply_wif_user" {
+  service_account_id = google_service_account.tf_ci_apply.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.environment/${var.ci_apply_environment}"
 }

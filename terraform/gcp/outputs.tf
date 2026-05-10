@@ -82,3 +82,8 @@ output "ci_service_account_email" {
   description = "Email of the plan-only CI service account. Set this as the GCP_CI_SA repository variable in GitHub Actions."
   value       = google_service_account.tf_ci.email
 }
+
+output "ci_apply_service_account_email" {
+  description = "Email of the apply CI service account (roles/owner, env-scoped WIF). Set this as the GCP_APPLY_SA repository variable in GitHub Actions."
+  value       = google_service_account.tf_ci_apply.email
+}

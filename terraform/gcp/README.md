@@ -16,9 +16,13 @@ dedicated project (`rockingham-homelab` by default):
   uploaded out of band) backing up `talos/_out/secrets.yaml`. See
   [`talos/README.md`](../../talos/README.md) for the upload + restore
   commands.
-- Workload Identity Federation pool + GitHub OIDC provider, plus a
-  plan-only CI service account (`roles/viewer`) consumed by the
-  [`terraform-plan` workflow](../../.github/workflows/terraform-plan.yml).
+- Workload Identity Federation pool + GitHub OIDC provider, plus two
+  CI service accounts: a plan-only SA (`roles/viewer`) consumed by the
+  [`terraform-plan` workflow](../../.github/workflows/terraform-plan.yml),
+  and an apply SA (`roles/owner`) consumed by the
+  [`terraform-apply` workflow](../../.github/workflows/terraform-apply.yml)
+  whose impersonation is gated on the `gcp` GitHub deployment
+  environment (see ADR-0004).
 
 State lives in `gs://rockingham-homelab-tfstate/terraform/gcp/` so local
 and CI applies share the same state. The bucket is created by this same
@@ -134,8 +138,9 @@ service accounts, and any GSM secrets created later with it. There is a
 
 ## CI: GitHub Actions auth
 
-`.github/workflows/terraform-plan.yml` runs on GitHub-hosted runners
-(not in-cluster ARC) and authenticates to GCP via Workload Identity
+`.github/workflows/terraform-plan.yml` and
+`.github/workflows/terraform-apply.yml` run on GitHub-hosted runners
+(not in-cluster ARC) and authenticate to GCP via Workload Identity
 Federation — no JSON keys. This root creates the federation:
 
 - A pool `github-actions` trusting GitHub's OIDC issuer.
@@ -143,13 +148,23 @@ Federation — no JSON keys. This root creates the federation:
   that rejects any token whose `repository` claim isn't
   `var.github_repository`. A leaked OIDC token from another repo
   cannot reach this project.
-- A service account (`tf-ci-plan` by default) with `roles/viewer` on
-  the project — sufficient for `tofu plan` to read state and the live
-  resource graph, structurally insufficient to apply.
-- A `roles/iam.workloadIdentityUser` binding letting the GitHub repo
-  impersonate that SA.
+- Two CI service accounts:
 
-After the first apply, wire the workflow up by setting these GitHub
+  | Service account            | Project role  | Used by                    | Impersonable from                                                                      |
+  |----------------------------|---------------|----------------------------|----------------------------------------------------------------------------------------|
+  | `tf-ci-plan` (default ID)  | `roles/viewer`| `terraform-plan.yml`       | Any workflow job in `var.github_repository`                                            |
+  | `tf-ci-apply` (default ID) | `roles/owner` | `terraform-apply.yml`      | Only jobs that declare `environment: gcp` (env-scoped WIF binding; see ADR-0004)       |
+
+  The plan SA is structurally insufficient to mutate anything; the
+  apply SA can mutate everything but is reachable only from a job
+  that opts into the `gcp` GitHub deployment environment. The provider
+  attribute mapping exposes both `attribute.repository` and
+  `attribute.environment`; the apply SA's `roles/iam.workloadIdentityUser`
+  binding keys on `principalSet://…/attribute.environment/gcp` so the
+  combined gate is equivalent to
+  `repo:RaptGroup/homelab:environment:gcp`.
+
+After the first apply, wire both workflows up by setting these GitHub
 **Actions repository variables** (Settings → Secrets and variables →
 Actions → Variables) to the values printed by `tofu output`:
 
@@ -157,23 +172,60 @@ Actions → Variables) to the values printed by `tofu output`:
 |---------------------|----------------------------------------------------------|
 | `GCP_WIF_PROVIDER`  | `tofu output -raw ci_workload_identity_provider`         |
 | `GCP_CI_SA`         | `tofu output -raw ci_service_account_email`              |
+| `GCP_APPLY_SA`      | `tofu output -raw ci_apply_service_account_email`        |
 
-And one **Actions secret**, so `terraform plan` can satisfy the
-`billing_account` variable in CI without a tracked tfvars file:
+And one **Actions secret**, so `terraform plan`/`apply` can satisfy
+the `billing_account` variable in CI without a tracked tfvars file:
 
 | Secret                | Value                                                  |
 |-----------------------|--------------------------------------------------------|
 | `GCP_BILLING_ACCOUNT` | The same billing account ID used in `terraform.tfvars` |
 
-The workflow never runs `tofu apply` — apply stays operator-only on a
-workstation with ADC. See `.github/workflows/terraform-plan.yml` for
-the full workflow.
+Then create the **`gcp` deployment environment** in the GitHub UI
+(Settings → Environments → New environment, name `gcp`) with:
 
-Until those three values are set, the `plan` job fails loudly at its
-first step with an error message pointing here — chosen over a silent
-skip so a missing wire-up surfaces in the PR check rather than hiding.
-`fmt` and change detection do not depend on auth and still gate the
-PR independently.
+- **Deployment branch restriction:** `Selected branches and tags` →
+  add `main`. The env-scoped WIF binding only restricts
+  *impersonation*; the GitHub-side branch rule keeps a fork or
+  feature-branch dispatch from queueing an apply at all.
+- **Required reviewer:** the repo owner. The apply job pauses for
+  approval at run time, regardless of who dispatched it.
+
+Without the environment in place, the `apply` job in
+`terraform-apply.yml` will queue indefinitely waiting for an
+environment that doesn't exist. Without the deployment-branch rule,
+a workflow run on a feature branch could attempt to opt into the
+environment.
+
+Until the four repo values above are set, both workflows fail loudly
+at their first step with an error message pointing here — chosen
+over a silent skip so a missing wire-up surfaces in the PR check
+rather than hiding. For `terraform-plan.yml`, `fmt` and change
+detection do not depend on auth and still gate the PR independently.
+
+`terraform-apply.yml` re-plans on every run with `-detailed-exitcode`
+and only proceeds to apply if the exit code is `2` (changes
+detected). The apply job downloads the exact `tfplan` binary the
+plan job produced, so what gets applied is what the reviewer
+approved — not a re-derived second plan that could legitimately
+diverge if state changed in between.
+
+### Bootstrap: enabling CI apply on a fresh project
+
+The `tf-ci-apply` SA has to exist before any workflow can impersonate
+it, so the first apply that creates it is necessarily local:
+
+1. Operator runs `tofu apply` locally to land the `tf-ci-apply` SA,
+   the `roles/owner` binding, the env-scoped WIF binding, and the
+   provider's `attribute.environment` mapping.
+2. Operator copies the new output value into the GitHub repo
+   variable: `GCP_APPLY_SA = $(tofu output -raw ci_apply_service_account_email)`.
+3. Operator creates the `gcp` GitHub deployment environment in the UI
+   with the protection rules above.
+4. From this point on, dispatching `terraform-apply.yml` via
+   `gh workflow run terraform-apply.yml` re-plans against current
+   state, surfaces the diff in the job log, pauses for environment
+   approval if there is a diff, and applies the approved plan.
 
 ## Outputs
 
@@ -186,5 +238,6 @@ PR independently.
 | `project_id`                    | Anything that needs to qualify GSM secret refs                   |
 | `project_number`                | Some GCP APIs / IAM bindings require the numeric form            |
 | `tfstate_bucket`                | Other TF roots' backend blocks (hardcoded; this is just a sanity output) |
-| `ci_workload_identity_provider` | `GCP_WIF_PROVIDER` Actions repository variable                   |
-| `ci_service_account_email`      | `GCP_CI_SA` Actions repository variable                          |
+| `ci_workload_identity_provider`   | `GCP_WIF_PROVIDER` Actions repository variable                 |
+| `ci_service_account_email`        | `GCP_CI_SA` Actions repository variable                        |
+| `ci_apply_service_account_email`  | `GCP_APPLY_SA` Actions repository variable                     |
