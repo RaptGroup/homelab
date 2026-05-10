@@ -59,18 +59,19 @@ the wrong order.
   application-default login` so the `google` provider can mint the
   bootstrap SA keys, and so the GCS backend can read state.
 
-## Required inputs
+## Inputs
 
-`terraform.tfvars` (gitignored):
+Every variable has a default — `tofu apply` runs with no `terraform.tfvars`
+at all if you accept the homelab defaults. Override in a (gitignored)
+`terraform.tfvars` only when one of the assumed values is wrong for your
+environment:
 
 ```hcl
-letsencrypt_email = "you@example.com"
-
-# Optional — defaults match the LAN documented in CONTEXT.md.
-# kubeconfig_path = "../../talos/_out/kubeconfig"
-# lab_dns_name    = "lab.jackhall.dev"
-# lb_pool_start   = "192.168.1.200"
-# lb_pool_end     = "192.168.1.230"
+# letsencrypt_email = "you@example.com"   # default is the operator mailbox
+# kubeconfig_path   = "../../talos/_out/kubeconfig"
+# lab_dns_name      = "lab.jackhall.dev"
+# lb_pool_start     = "192.168.1.200"
+# lb_pool_end       = "192.168.1.230"
 ```
 
 For first-run smoke testing, point at the Let's Encrypt staging

@@ -17,8 +17,9 @@ variable "lab_dns_name" {
 }
 
 variable "letsencrypt_email" {
-  description = "Contact email registered with Let's Encrypt for issuance + expiry notices."
+  description = "Contact email registered with Let's Encrypt for issuance + expiry notices. The default is the homelab operator; override in terraform.tfvars if a different mailbox should receive expiry warnings."
   type        = string
+  default     = "jackvincenthall@gmail.com"
 }
 
 variable "letsencrypt_server" {
