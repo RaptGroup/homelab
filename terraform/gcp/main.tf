@@ -282,6 +282,75 @@ resource "google_secret_manager_secret" "adguard_home_admin" {
   depends_on = [google_project_service.enabled]
 }
 
+# Homepage live-status widget credentials. Three plaintext containers
+# pulled by the homepage-widget-credentials ExternalSecret in
+# kubernetes/apps/homepage/manifests/external-secret.yaml and surfaced as
+# HOMEPAGE_VAR_* env vars on the Homepage Deployment.
+#
+# homepage-adguard-{username,password} hold the *plaintext* of the same
+# admin credential whose bcrypt hash lives in adguard-home-admin — both
+# must point at the same actual password. Homepage's AdGuard widget
+# authenticates against the live admin API, which doesn't accept the
+# bcrypt hash.
+#
+# Upload (after `tofu apply` here):
+#
+#   echo -n '<adguard-admin-username>' | gcloud secrets versions add \
+#     homepage-adguard-username --project rockingham-homelab --data-file=-
+#   echo -n '<adguard-admin-password>' | gcloud secrets versions add \
+#     homepage-adguard-password --project rockingham-homelab --data-file=-
+#   echo -n '<argocd-readonly-token>'  | gcloud secrets versions add \
+#     homepage-argocd-token    --project rockingham-homelab --data-file=-
+#
+# See kubernetes/apps/homepage/README.md for the end-to-end flow.
+resource "google_secret_manager_secret" "homepage_adguard_username" {
+  project   = google_project.lab.project_id
+  secret_id = "homepage-adguard-username"
+
+  labels = {
+    purpose = "addon-credential"
+    addon   = "homepage"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret" "homepage_adguard_password" {
+  project   = google_project.lab.project_id
+  secret_id = "homepage-adguard-password"
+
+  labels = {
+    purpose = "addon-credential"
+    addon   = "homepage"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret" "homepage_argocd_token" {
+  project   = google_project.lab.project_id
+  secret_id = "homepage-argocd-token"
+
+  labels = {
+    purpose = "addon-credential"
+    addon   = "homepage"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on
