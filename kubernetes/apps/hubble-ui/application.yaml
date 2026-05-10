@@ -1,0 +1,28 @@
+# Exposes the Hubble UI Service that ships with Cilium under
+# `hubble.lab.jackhall.dev`. The UI itself is installed by terraform/bootstrap
+# (Cilium chart, hubble.ui.enabled=true); this app only owns the
+# Gateway/HTTPRoute/ReferenceGrant exposure layer.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hubble-ui
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hubble-ui
+  source:
+    repoURL: https://github.com/jvcorredor/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/hubble-ui/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

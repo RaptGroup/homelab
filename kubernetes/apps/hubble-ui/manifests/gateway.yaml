@@ -1,0 +1,22 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: hubble-ui
+  namespace: hubble-ui
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      hostname: hubble.lab.jackhall.dev
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            namespace: cert-manager
+            name: wildcard-lab-jackhall-dev-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
