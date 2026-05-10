@@ -1,0 +1,31 @@
+# Routing layer for the self-managed ArgoCD install. The chart itself is
+# owned by the bootstrap-time `argocd` Application (see
+# kubernetes/bootstrap/argocd/) — this app only ships the HTTPRoute that
+# exposes argocd-server at https://argocd.lab.jackhall.dev via the central
+# `lab` Gateway in gateway-system (issue #48).
+#
+# Path-only Application — no chart, just raw HTTPRoute under manifests/.
+# Same shape as kubernetes/apps/hubble-ui/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-routing
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  source:
+    repoURL: git@github.com:jvcorredor/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/argocd/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
