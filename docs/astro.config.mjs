@@ -34,6 +34,10 @@ export default defineConfig({
           autogenerate: { directory: 'networking' },
         },
         {
+          label: 'Cloud',
+          autogenerate: { directory: 'cloud' },
+        },
+        {
           label: 'Platform',
           autogenerate: { directory: 'platform' },
         },
