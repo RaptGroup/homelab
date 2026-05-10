@@ -1,0 +1,57 @@
+# argocd.lab.jackhall.dev → argocd-server admin/API. argocd-server runs
+# with `server.insecure: true` (see kubernetes/bootstrap/argocd/values.yaml),
+# so the in-cluster hop is plaintext on port 80; TLS terminates at the
+# central `lab` Gateway in gateway-system (issue #48).
+#
+# AdGuard Home's seed wildcard rewrite (`*.lab.jackhall.dev → 192.168.1.201`)
+# resolves this hostname to the central Gateway by construction — no
+# per-host AdGuard rewrite needed.
+#
+# Carries the gethomepage.dev/* annotations Homepage discovers via
+# `kubernetes.gateway: true`, plus the ArgoCD widget block. The widget
+# calls argocd-server's API in-cluster (skipping the Gateway hop) using
+# the readonly account token Homepage's ExternalSecret exposes as
+# HOMEPAGE_VAR_ARGOCD_TOKEN.
+#
+# HTTPRoute name `argocd-server` matches the Deployment's
+# `app.kubernetes.io/name`, so Homepage's default status discovery finds
+# the right pod without `gethomepage.dev/app` / `…/namespace` overrides.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: ArgoCD
+    gethomepage.dev/description: GitOps controller
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: argocd.png
+    gethomepage.dev/href: https://argocd.lab.jackhall.dev
+    gethomepage.dev/widget.type: argocd
+    gethomepage.dev/widget.url: http://argocd-server.argocd:80
+    gethomepage.dev/widget.key: "{{HOMEPAGE_VAR_ARGOCD_TOKEN}}"
+spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile. Same fix as hubble-ui — see #33.
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: gateway-system
+      name: lab
+      sectionName: https
+  hostnames:
+    - argocd.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: argocd-server
+          port: 80
+          weight: 1
