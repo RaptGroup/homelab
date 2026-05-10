@@ -25,6 +25,9 @@ ArgoCD. Phase 1 addons are running today.
   bring-up runbook for the cluster.
 - [`scripts/lint-apps.sh`](./scripts/lint-apps.sh) — `helm template` +
   `kubeconform` per addon, also wired into `.github/workflows/apps-lint.yml`.
+- [`scripts/argocd-tracking-sweep.sh`](./scripts/argocd-tracking-sweep.sh) —
+  flag any cluster resource still on Argo's legacy `instance` label without
+  the modern `tracking-id` annotation (silent-prune-orphan candidates; see #68).
 
 ## Documentation
 
