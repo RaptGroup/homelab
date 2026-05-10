@@ -1,9 +1,19 @@
-# Gateway API CRDs (HTTPRoute and friends). Standard channel only —
-# experimental channel pulls in TLSRoute and friends that ADR-0002 explicitly
-# leaves disabled. Must be applied before Cilium so cilium-operator finds the
-# CRDs at startup and registers its GatewayClass.
+# Gateway API CRDs (HTTPRoute and friends). Must be applied before Cilium so
+# cilium-operator finds the CRDs at startup and accepts its GatewayClass.
+#
+# Experimental channel, not standard: cilium-operator's gateway-api
+# controller probes the API surface for *all* required GVKs at startup
+# (gatewayclasses, gateways, httproutes, grpcroutes, referencegrants, plus
+# tlsroutes — only present in the experimental channel) and refuses to
+# register its GatewayClass when any are missing. With standard-install
+# the controller logs `tlsroutes... not found` and the GatewayClass
+# stays at `Accepted=Unknown / Waiting for controller`.
+#
+# Installing the experimental CRD does not contradict ADR-0002's
+# "HTTPRoute only" stance — that decision is about which Gateway API
+# kinds we *use*, not which CRDs sit unused on the API server.
 data "http" "gateway_api_crds" {
-  url = "https://github.com/kubernetes-sigs/gateway-api/releases/download/${var.gateway_api_version}/standard-install.yaml"
+  url = "https://github.com/kubernetes-sigs/gateway-api/releases/download/${var.gateway_api_version}/experimental-install.yaml"
 
   request_headers = {
     Accept = "application/yaml"
