@@ -1,0 +1,48 @@
+# AdGuard Home — first ArgoCD-managed addon. Provides LAN DNS resolution
+# (split-horizon) and ad-blocking. The DNS service is pinned to
+# 192.168.1.200; the admin UI is exposed at adguard.lab.jackhall.dev.
+#
+# Multi-source layout:
+#   - Source 1: bjw-s/app-template chart from upstream Helm repo. AdGuard
+#     Home has no first-party chart, and app-template is the de-facto
+#     standard for "I just need a Deployment + Service + PVC".
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives in
+#     Git alongside the Application.
+#   - Source 3: the manifests/ directory in this repo, holding raw
+#     Gateway / HTTPRoute / ExternalSecret / ReferenceGrant / DNS LB
+#     Service / seed ConfigMap. Argo applies these directly without
+#     templating.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: adguard-home
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: adguard-home
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts/
+      chart: app-template
+      targetRevision: 4.6.2
+      helm:
+        releaseName: adguard-home
+        valueFiles:
+          - $values/kubernetes/apps/adguard-home/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/adguard-home/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

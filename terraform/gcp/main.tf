@@ -242,6 +242,46 @@ resource "google_secret_manager_secret" "argocd_repo_ssh_key" {
   depends_on = [google_project_service.enabled]
 }
 
+# --- Per-addon credential containers -----------------------------------------
+#
+# One GSM container per addon that needs an out-of-band credential. The
+# container is TF-managed (so the addon's ExternalSecret can reference a
+# stable name on a fresh GCP project), the value is uploaded out of band
+# via `gcloud secrets versions add`. Same rationale as
+# talos-cluster-secrets above: keeping plaintext or hashed credentials
+# out of TF state.
+
+# AdGuard Home admin user. JSON object with `username` and `password_hash`
+# (bcrypt). Generate the hash locally with:
+#
+#   htpasswd -nbB admin '<password>' | cut -d: -f2
+#
+# then upload:
+#
+#   echo '{"username":"admin","password_hash":"<hash>"}' \
+#     | gcloud secrets versions add adguard-home-admin \
+#         --project rockingham-homelab --data-file=-
+#
+# The seed-config init container in kubernetes/apps/adguard-home reads
+# the bcrypt hash and renders /opt/adguardhome/conf/AdGuardHome.yaml on
+# first boot; AdGuard Home loads the user without going through the
+# setup wizard.
+resource "google_secret_manager_secret" "adguard_home_admin" {
+  project   = google_project.lab.project_id
+  secret_id = "adguard-home-admin"
+
+  labels = {
+    purpose = "addon-credential"
+    addon   = "adguard-home"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on

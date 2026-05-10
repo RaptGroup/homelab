@@ -1,0 +1,177 @@
+# bjw-s app-template values for AdGuard Home.
+#
+# Renders:
+#   - One Deployment (singleton — local-path PVC, can't run two pods)
+#   - The admin-UI Service (ClusterIP) carrying the gethomepage.dev
+#     annotations for Homepage auto-discovery
+#   - Two PVCs (config + work) on the local-path StorageClass
+#
+# The DNS LoadBalancer Service (pinned to .200), Gateway, HTTPRoute,
+# ReferenceGrant, ExternalSecret, and seed ConfigMap live in
+# kubernetes/apps/adguard-home/manifests/. AdGuard Home has no env-var
+# admin-password knob, so the password is bcrypt-hashed in GSM, synced
+# by ESO into a K8s Secret, and consumed by an init container that
+# renders /opt/adguardhome/conf/AdGuardHome.yaml from a seed ConfigMap
+# the first time the pod boots (idempotent: skips if the file exists).
+
+defaultPodOptions:
+  # AdGuard binds to 53/udp+tcp and 80/tcp from inside the container.
+  # The image runs as root upstream; non-root + NET_BIND_SERVICE works
+  # too but adds complexity for no real gain on a singleton pod.
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+
+controllers:
+  adguard-home:
+    type: deployment
+    replicas: 1
+    # Recreate (not RollingUpdate) because a ReadWriteOnce PVC on
+    # local-path can only attach to one pod at a time.
+    strategy: Recreate
+
+    initContainers:
+      seed-config:
+        # busybox is enough — only `sh`, `sed`, `cat`, `mkdir`, `test`.
+        image:
+          repository: busybox
+          tag: "1.37.0"
+          pullPolicy: IfNotPresent
+        command:
+          - sh
+          - -eu
+          - -c
+          - |
+            CONF=/opt/adguardhome/conf/AdGuardHome.yaml
+            if [ -f "$CONF" ]; then
+              echo "AdGuardHome.yaml already present; preserving operator edits."
+              exit 0
+            fi
+            echo "Seeding AdGuardHome.yaml from configmap + admin secret."
+            mkdir -p /opt/adguardhome/conf
+            USERNAME="$(cat /run/adguard-init/secret/username)"
+            PASSWORD_HASH="$(cat /run/adguard-init/secret/password_hash)"
+            sed \
+              -e "s|__ADGUARD_USERNAME__|${USERNAME}|g" \
+              -e "s|__ADGUARD_PASSWORD_HASH__|${PASSWORD_HASH}|g" \
+              /run/adguard-init/seed/AdGuardHome.yaml > "$CONF"
+            chmod 0600 "$CONF"
+
+    containers:
+      app:
+        image:
+          repository: adguard/adguardhome
+          tag: v0.107.55
+          pullPolicy: IfNotPresent
+        env:
+          TZ: UTC
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 80
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 80
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 80
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              failureThreshold: 30
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  app:
+    primary: true
+    controller: adguard-home
+    type: ClusterIP
+    annotations:
+      # Picked up by Homepage auto-discovery (gethomepage.dev).
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/name: "AdGuard Home"
+      gethomepage.dev/description: "LAN DNS + ad-blocking"
+      gethomepage.dev/group: "Networking"
+      gethomepage.dev/href: "https://adguard.lab.jackhall.dev"
+      gethomepage.dev/icon: "adguard-home.svg"
+    ports:
+      http:
+        enabled: true
+        primary: true
+        port: 80
+        targetPort: 80
+        protocol: HTTP
+
+persistence:
+  # AdGuard config (AdGuardHome.yaml lives here once seeded).
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      adguard-home:
+        seed-config:
+          - path: /opt/adguardhome/conf
+        app:
+          - path: /opt/adguardhome/conf
+
+  # Filter lists, query log, stats, runtime DB.
+  work:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: local-path
+    advancedMounts:
+      adguard-home:
+        app:
+          - path: /opt/adguardhome/work
+
+  # Seed AdGuardHome.yaml template (rendered by manifests/seed-configmap.yaml).
+  # Only consumed by the init container.
+  seed:
+    enabled: true
+    type: configMap
+    name: adguard-home-seed
+    advancedMounts:
+      adguard-home:
+        seed-config:
+          - path: /run/adguard-init/seed
+            readOnly: true
+
+  # Admin user/bcrypt-hash, synced from GSM by manifests/external-secret.yaml.
+  # Only consumed by the init container.
+  admin-secret:
+    enabled: true
+    type: secret
+    name: adguard-home-admin
+    advancedMounts:
+      adguard-home:
+        seed-config:
+          - path: /run/adguard-init/secret
+            readOnly: true

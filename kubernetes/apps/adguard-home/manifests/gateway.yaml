@@ -1,0 +1,38 @@
+# AdGuard Home admin UI Gateway. Per-addon, matching the convention
+# established by kubernetes/apps/hubble-ui/manifests/gateway.yaml: each
+# addon brings its own Gateway scoped to its own namespace
+# (`from: Same`), rather than a single cluster-wide shared Gateway.
+#
+# Pinned to .201 so AdGuard Home's seed wildcard rewrite
+# *.lab.jackhall.dev → 192.168.1.201 has a stable target for the addon's
+# own hostname. Other addons (Hubble, future ArgoCD, Homepage) bring
+# their own Gateways at different LB-pool IPs; the operator adds
+# per-host rewrites in the AdGuard UI as those addons come online
+# (further automation deferred per PRD #4).
+#
+# TLS terminates here with the cluster wildcard cert from cert-manager.
+# manifests/reference-grant.yaml authorizes the cross-namespace ref.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: adguard-home
+  namespace: adguard-home
+  annotations:
+    lbipam.cilium.io/ips: "192.168.1.201"
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      hostname: adguard.lab.jackhall.dev
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            namespace: cert-manager
+            name: wildcard-lab-jackhall-dev-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -1,0 +1,50 @@
+# adguard.lab.jackhall.dev → AdGuard Home admin UI (chart-rendered
+# Service `adguard-home` in this namespace). TLS terminates at the
+# parent Gateway with the wildcard cert; the hop into the pod is
+# plaintext on port 80 (same model the bootstrap uses for argocd).
+#
+# Carries the gethomepage.dev/* annotations Homepage (#26) discovers
+# via `kubernetes.gateway: true`, plus the AdGuard widget block. The
+# widget calls AdGuard's API in-cluster (skipping the Gateway hop)
+# using the plaintext credentials Homepage's ExternalSecret exposes
+# as HOMEPAGE_VAR_ADGUARD_{USERNAME,PASSWORD}.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: adguard-home-ui
+  namespace: adguard-home
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: AdGuard Home
+    gethomepage.dev/description: LAN DNS + ad-blocking
+    gethomepage.dev/group: Networking
+    gethomepage.dev/icon: adguard-home.svg
+    gethomepage.dev/href: https://adguard.lab.jackhall.dev
+    gethomepage.dev/widget.type: adguard
+    gethomepage.dev/widget.url: http://adguard-home.adguard-home:80
+    gethomepage.dev/widget.username: "{{HOMEPAGE_VAR_ADGUARD_USERNAME}}"
+    gethomepage.dev/widget.password: "{{HOMEPAGE_VAR_ADGUARD_PASSWORD}}"
+spec:
+  # The Gateway API admission webhook defaults parentRef group/kind, the
+  # backendRef weight, and the implicit "PathPrefix /" match block when
+  # they're omitted. Argo with strict comparison flags those server-side
+  # additions as drift, so spell them out here verbatim — same pattern
+  # as kubernetes/apps/hubble-ui/manifests/httproute.yaml.
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: adguard-home
+      sectionName: https
+  hostnames:
+    - adguard.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: adguard-home
+          port: 80
+          weight: 1

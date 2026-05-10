@@ -1,0 +1,34 @@
+# DNS LoadBalancer Service. Pinned to 192.168.1.200 via the Cilium
+# lbipam annotation so LAN devices have one stable address to point
+# manual DNS at (Path C, see CONTEXT.md). Sits in the .200–.230 pool
+# from terraform/bootstrap's CiliumLoadBalancerIPPool.
+#
+# Selector targets the bjw-s/app-template Deployment via the
+# `app.kubernetes.io/name` label the chart sets to the controller key
+# (`adguard-home`).
+apiVersion: v1
+kind: Service
+metadata:
+  name: adguard-home-dns
+  namespace: adguard-home
+  annotations:
+    # Cilium LB IPAM — request this specific IP from the pool.
+    lbipam.cilium.io/ips: "192.168.1.200"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  # Same selector the chart's primary Service uses, so this LB targets
+  # the same Deployment without the chart having to render two Services.
+  selector:
+    app.kubernetes.io/controller: adguard-home
+    app.kubernetes.io/instance: adguard-home
+    app.kubernetes.io/name: adguard-home
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
