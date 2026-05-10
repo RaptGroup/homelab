@@ -110,6 +110,13 @@ resource "kubectl_manifest" "cluster_issuer_letsencrypt" {
             dns01 = {
               cloudDNS = {
                 project = local.project_id
+                # Skip cert-manager's auto-discovery of the hosted zone.
+                # That code path calls dns.managedZones.list at project level;
+                # our SA holds roles/dns.admin scoped to *this zone* (good for
+                # record CRUD) and nothing project-wide, so the list call
+                # returns 403 and the challenge never reaches "presented".
+                # Naming the zone explicitly drops the list call entirely.
+                hostedZoneName = local.lab_zone_name
                 serviceAccountSecretRef = {
                   name = "cert-manager-dns01-key"
                   key  = "credentials.json"
