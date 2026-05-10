@@ -1,4 +1,8 @@
-# ARC scale set targeting github.com/jvcorredor — the personal pool.
+# ARC scale set targeting github.com/RaptGroup — the personal-projects
+# pool. RaptGroup is a free GitHub org the operator created to host
+# personal repos that need cluster-reaching CI; ARC's chart can't serve
+# user-account scopes (only repository / org / enterprise URLs work),
+# so the org is the necessary unit of grouping.
 #
 # Three sources because the chart and the raw extras (Namespace,
 # ExternalSecret carrying the GitHub App credentials, homepage card
@@ -10,7 +14,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: arc-runners-personal
+  name: arc-runners-raptgroup
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -18,20 +22,20 @@ spec:
   project: default
   destination:
     server: https://kubernetes.default.svc
-    namespace: arc-runners-personal
+    namespace: arc-runners-raptgroup
   sources:
     - repoURL: ghcr.io/actions/actions-runner-controller-charts
       chart: gha-runner-scale-set
       targetRevision: 0.14.1
       helm:
         valueFiles:
-          - $values/kubernetes/apps/arc-runners-personal/helm-values.yaml
+          - $values/kubernetes/apps/arc-runners-raptgroup/helm-values.yaml
     - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
       ref: values
     - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
-      path: kubernetes/apps/arc-runners-personal/manifests
+      path: kubernetes/apps/arc-runners-raptgroup/manifests
   syncPolicy:
     automated:
       prune: true

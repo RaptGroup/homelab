@@ -1,6 +1,6 @@
 # Placeholder Service carrying gethomepage.dev/* annotations so the
 # brazostech runner pool surfaces as a card on the cluster dashboard.
-# See arc-runners-personal/manifests/homepage-card-service.yaml for the
+# See arc-runners-raptgroup/manifests/homepage-card-service.yaml for the
 # rationale (the chart doesn't ship a Service of its own).
 apiVersion: v1
 kind: Service

@@ -1,8 +1,8 @@
 # ARC scale set targeting github.com/brazostech — the brazostech pool.
 #
-# Same shape as the personal pool. Same chart, same controller, distinct
+# Same shape as the RaptGroup pool. Same chart, same controller, distinct
 # GitHub App installation ID (the access boundary — explicitly NOT
-# installed on Scale Computing). See arc-runners-personal/application.yaml
+# installed on Scale Computing). See arc-runners-raptgroup/application.yaml
 # for the source-layout rationale.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

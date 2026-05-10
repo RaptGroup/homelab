@@ -1,7 +1,7 @@
 # Actions Runner Controller (ARC) — the controller half of the
 # `gha-runner-scale-set` two-chart pattern. Owns the AutoscalingRunnerSet
 # CRD and reconciles every per-scope scale set installed alongside it
-# (arc-runners-personal, arc-runners-brazostech).
+# (arc-runners-raptgroup, arc-runners-brazostech).
 #
 # Multi-source: chart from ghcr.io/actions, values from helm-values.yaml in
 # this repo. Both scale sets reference the controller SA by a fixed name —

@@ -8,15 +8,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: arc-runners-personal-homepage-card
-  namespace: arc-runners-personal
+  name: arc-runners-raptgroup-homepage-card
+  namespace: arc-runners-raptgroup
   annotations:
     gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: Runners — personal
-    gethomepage.dev/description: Self-hosted ARC pool for github.com/jvcorredor
+    gethomepage.dev/name: Runners — RaptGroup
+    gethomepage.dev/description: Self-hosted ARC pool for github.com/RaptGroup
     gethomepage.dev/group: Platform
     gethomepage.dev/icon: github.png
-    gethomepage.dev/href: https://github.com/jvcorredor
+    gethomepage.dev/href: https://github.com/RaptGroup
 spec:
   type: ExternalName
   externalName: github.com
