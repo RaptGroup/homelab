@@ -1,8 +1,13 @@
 # Homepage (gethomepage.dev) — the homelab dashboard at
-# dashboard.lab.jackhall.dev. Multi-source: chart from
-# jameswynn.github.io/helm-charts, values from helm-values.yaml in this
-# repo. Raw Gateway/HTTPRoute/ReferenceGrant/ExternalSecret live alongside
-# under manifests/ and are picked up by the root app-of-apps directly.
+# dashboard.lab.jackhall.dev.
+#
+# Multi-source layout (mirrors kubernetes/apps/adguard-home/):
+#   - Source 1: jameswynn/homepage chart from upstream Helm repo.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives in
+#     Git alongside the Application.
+#   - Source 3: the manifests/ directory in this repo, holding raw
+#     Gateway / HTTPRoute / ReferenceGrant / ExternalSecret. Argo applies
+#     these directly without templating.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -25,6 +30,9 @@ spec:
     - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
       ref: values
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/homepage/manifests
   syncPolicy:
     automated:
       prune: true

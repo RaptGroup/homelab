@@ -119,11 +119,28 @@ annotations reference as `{{HOMEPAGE_VAR_…}}` substitutions.
    - the `homepage` Deployment (envFrom mounts
      `homepage-widget-credentials` as `HOMEPAGE_VAR_*`),
    - the `homepage` Service on port 3000,
-   - the per-namespace Gateway (waits for the wildcard cert to be
-     `Ready` in `cert-manager`),
+   - the per-namespace Gateway pinned to `192.168.1.203` (waits for the
+     wildcard cert to be `Ready` in `cert-manager`),
    - the `HTTPRoute` for `dashboard.lab.jackhall.dev`.
 
-5. **Verify.** Once the device is using AdGuard Home for resolution
+5. **Add the per-host AdGuard rewrite.** AdGuard's seed wildcard
+   (`*.lab.jackhall.dev → 192.168.1.201`) sends every unrouted lab
+   hostname to the AdGuard admin-UI Gateway, which only knows the SNI
+   `adguard.lab.jackhall.dev` and resets unrecognised handshakes. The
+   per-addon convention (per `kubernetes/apps/adguard-home/manifests/gateway.yaml`)
+   is to add an explicit per-host rewrite via the AdGuard UI as each
+   addon comes online:
+
+   - `https://adguard.lab.jackhall.dev` → **Filters → DNS rewrites → Add**
+   - Domain: `dashboard.lab.jackhall.dev`
+   - Answer: `192.168.1.203`
+
+   These per-host rewrites are not in Git — they live in the
+   `adguard-home-config` PVC. A cold restart of AdGuard re-seeds only
+   the wildcard, so any per-host rewrites need to be re-added (DR-only
+   concern; see the AdGuard README's disaster-recovery section).
+
+6. **Verify.** Once the device is using AdGuard Home for resolution
    (per `kubernetes/apps/adguard-home/README.md`):
 
    ```sh
@@ -162,5 +179,5 @@ bcrypt recipe.
 Homepage is stateless — its config is rendered from `helm-values.yaml`
 on every pod start and the dashboard's data comes from live cluster
 queries plus the widget API calls. Re-running the first-install flow
-(steps 2–5 above) is the entire DR procedure; the only state worth
+(steps 2–6 above) is the entire DR procedure; the only state worth
 keeping is the GSM credentials, which are already off-machine.
