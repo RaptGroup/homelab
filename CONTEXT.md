@@ -159,15 +159,20 @@ with two installations. Workflows pick a pool through the `runs-on:` label.
 The namespace the ARC controller (`gha-runner-scale-set-controller` chart)
 lives in. The `AutoscalingRunnerSet` CRD it owns is cluster-scoped, but the
 controller pod, its SA, and its leader-election lease all live here. Each
-scale set gets its own per-pool namespace (`arc-runners-personal`,
+scale set gets its own per-pool namespace (`arc-runners-raptgroup`,
 `arc-runners-brazostech`) so the runner pods, listener, and the ESO-synced
 GitHub App Secret are isolated per scope.
 
-### `arc-runners-personal`
+### `arc-runners-raptgroup`
 
-Targets `https://github.com/jvcorredor`. Workflows opt in with
-`runs-on: [self-hosted, linux, personal]`. Backed by the GitHub App
-installation on the `jvcorredor` user account.
+Targets `https://github.com/RaptGroup` — the operator's personal-projects
+GitHub org. Workflows opt in with `runs-on: [self-hosted, linux, raptgroup]`.
+Backed by the GitHub App installation on the RaptGroup org.
+
+`RaptGroup` exists because ARC's chart can't serve user-account scopes
+(only repository, org, or enterprise URLs work). Personal repos that
+need cluster-reaching CI get transferred into RaptGroup rather than
+maintaining one repo-scoped scale set per repo.
 
 ### `arc-runners-brazostech`
 

@@ -1,15 +1,15 @@
-# gha-runner-scale-set values for the personal pool.
-# Targets jvcorredor's user account; backed by the same `Rockingham
-# Homelab ARC` GitHub App as the brazostech pool, but a distinct
-# installation. Workflows opt in with `runs-on: [self-hosted, personal]`.
+# gha-runner-scale-set values for the RaptGroup pool — the operator's
+# personal-projects org. Backed by the same `Rockingham Homelab ARC`
+# GitHub App as the brazostech pool, but a distinct installation.
+# Workflows opt in with `runs-on: [self-hosted, raptgroup]`.
 
-githubConfigUrl: https://github.com/jvcorredor
+githubConfigUrl: https://github.com/RaptGroup
 
 # Variation C — the chart consumes a pre-existing K8s Secret rather than
 # baking credentials into values. ESO populates that Secret from GSM
 # (see manifests/external-secret.yaml). Rotation is a GSM update; no
 # chart change.
-githubConfigSecret: arc-runners-personal-github-config
+githubConfigSecret: arc-runners-raptgroup-github-config
 
 # The chart's helm-template-time controller discovery relies on a
 # `lookup`, which Argo's render can't satisfy. Pin the controller SA
@@ -21,14 +21,14 @@ controllerServiceAccount:
 
 # `self-hosted` is registered automatically; the items here are appended.
 # The full GitHub-side label set is therefore
-#   {self-hosted, linux, personal, arc-runners-personal}
+#   {self-hosted, linux, raptgroup, arc-runners-raptgroup}
 # so workflows can target the pool with any of:
-#   runs-on: [self-hosted, personal]
-#   runs-on: [self-hosted, linux, personal]
-#   runs-on: arc-runners-personal
+#   runs-on: [self-hosted, raptgroup]
+#   runs-on: [self-hosted, linux, raptgroup]
+#   runs-on: arc-runners-raptgroup
 scaleSetLabels:
   - linux
-  - personal
+  - raptgroup
 
 # Scale to zero when idle. Cap at 4 concurrent runners — anything more is
 # better served by paying for GitHub-hosted runners than by sizing the
