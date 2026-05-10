@@ -1,0 +1,38 @@
+---
+title: Rockingham Homelab
+description: A 6-node bare-metal Kubernetes cluster running Talos Linux.
+template: splash
+hero:
+  tagline: A 6-node bare-metal Kubernetes cluster running Talos Linux.
+  actions:
+    - text: Architecture overview
+      link: ./overview/architecture/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/jvcorredor/homelab
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What lives here
+
+<CardGrid stagger>
+  <Card title="Infrastructure" icon="setting">
+    Terraform that provisions the cluster and supporting services, plus the
+    Talos machine configurations applied to each node.
+  </Card>
+  <Card title="Operations" icon="rocket">
+    Day-2 runbooks: bringing nodes up and down, upgrades, certificate
+    rotation, backups, and recovery.
+  </Card>
+  <Card title="Why bare metal" icon="open-book">
+    Notes on the rebuild from a VM-based design to bare-metal Talos, and the
+    tradeoffs that came with it.
+  </Card>
+  <Card title="Public by design" icon="approve-check">
+    These docs are intentionally consumable by a general audience — no
+    secrets, no host-specific credentials.
+  </Card>
+</CardGrid>
