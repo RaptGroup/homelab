@@ -165,6 +165,11 @@ The workflow never runs `tofu apply` — apply stays operator-only on a
 workstation with ADC. See `.github/workflows/terraform-plan.yml` for
 the full workflow.
 
+Until `GCP_WIF_PROVIDER` and `GCP_CI_SA` are set, the workflow's `plan`
+job is skipped (not failed). `fmt` + change detection still gate every
+PR. The first PR after wire-up runs full validate + plan against both
+roots.
+
 ## Outputs
 
 | Output                          | Used by                                                          |
