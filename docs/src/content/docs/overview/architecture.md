@@ -26,7 +26,9 @@ VM-based design that ran on Hypercore.
 - `terraform/` — Two roots, split per
   [ADR-0001](/homelab/architecture/decisions/).
   `terraform/gcp/` owns the cloud resources (Cloud DNS zone, Secret
-  Manager secrets, the IAM service account ESO uses).
+  Manager secrets, the IAM service account ESO uses, and the
+  [Workload Identity Federation pool](/homelab/automation/ci/#terraform-plan)
+  the `terraform-plan` CI workflow authenticates against).
   `terraform/bootstrap/` brings a fresh Talos cluster from "kubeconfig
   works, nothing installed" to "ArgoCD reconciles `kubernetes/apps/`" —
   Gateway API CRDs, Cilium, cert-manager, External Secrets Operator,
