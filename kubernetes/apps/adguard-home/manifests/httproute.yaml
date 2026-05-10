@@ -9,7 +9,7 @@ metadata:
   namespace: adguard-home
 spec:
   parentRefs:
-    - name: lab-gateway
+    - name: adguard-home
       sectionName: https
   hostnames:
     - adguard.lab.jackhall.dev

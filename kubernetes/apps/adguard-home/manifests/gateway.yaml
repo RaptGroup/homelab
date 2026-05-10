@@ -1,23 +1,21 @@
-# Cilium Gateway for the lab's HTTP routes. AdGuard Home is the first
-# addon to bring a Gateway, so this Gateway is owned by the adguard-home
-# Application for now; future addon HTTPRoutes attach via cross-namespace
-# parentRefs (allowedRoutes.namespaces.from: All below). Move to a
-# dedicated `kubernetes/apps/lab-gateway/` directory in a future PR if
-# the cross-ownership becomes confusing.
+# AdGuard Home admin UI Gateway. Per-addon, matching the convention
+# established by kubernetes/apps/hubble-ui/manifests/gateway.yaml: each
+# addon brings its own Gateway scoped to its own namespace
+# (`from: Same`), rather than a single cluster-wide shared Gateway.
 #
-# IP allocation: pinned to .201 so AdGuard Home's wildcard rewrite
-# *.lab.jackhall.dev → 192.168.1.201 (seeded in AdGuardHome.yaml) lands
-# on a stable target. Sits inside the .200–.230 LB pool, just above the
-# DNS Service at .200.
+# Pinned to .201 so AdGuard Home's seed wildcard rewrite
+# *.lab.jackhall.dev → 192.168.1.201 has a stable target for the addon's
+# own hostname. Other addons (Hubble, future ArgoCD, Homepage) bring
+# their own Gateways at different LB-pool IPs; the operator adds
+# per-host rewrites in the AdGuard UI as those addons come online
+# (further automation deferred per PRD #4).
 #
-# TLS: terminates at the Gateway with the wildcard cert produced by
-# terraform/bootstrap (Secret cert-manager/wildcard-lab-jackhall-dev-tls).
-# A ReferenceGrant in the cert-manager namespace authorizes this
-# cross-namespace ref (manifests/reference-grant.yaml).
+# TLS terminates here with the cluster wildcard cert from cert-manager.
+# manifests/reference-grant.yaml authorizes the cross-namespace ref.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: lab-gateway
+  name: adguard-home
   namespace: adguard-home
   annotations:
     lbipam.cilium.io/ips: "192.168.1.201"
@@ -25,16 +23,16 @@ spec:
   gatewayClassName: cilium
   listeners:
     - name: https
+      hostname: adguard.lab.jackhall.dev
       port: 443
       protocol: HTTPS
-      hostname: "*.lab.jackhall.dev"
       tls:
         mode: Terminate
         certificateRefs:
           - kind: Secret
             group: ""
-            name: wildcard-lab-jackhall-dev-tls
             namespace: cert-manager
+            name: wildcard-lab-jackhall-dev-tls
       allowedRoutes:
         namespaces:
-          from: All
+          from: Same

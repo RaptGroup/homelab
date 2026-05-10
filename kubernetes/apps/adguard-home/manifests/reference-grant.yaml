@@ -1,16 +1,13 @@
-# Authorize the lab-gateway in adguard-home to reference the wildcard
-# cert Secret living in cert-manager. ReferenceGrant lives in the
-# *target* namespace (where the Secret is); the `from` block names the
-# referrer.
-#
-# This is the Gateway-API-sanctioned cross-namespace pattern — the
+# Authorizes the adguard-home Gateway to reference the cluster-wide
+# wildcard cert Secret in the cert-manager namespace. Same pattern as
+# kubernetes/apps/hubble-ui/manifests/referencegrant-cert.yaml — the
 # wildcard cert is per-cluster (one Certificate, one Secret) and every
 # Gateway that terminates TLS for `*.lab.jackhall.dev` references it
-# through a grant like this.
+# through a grant like this. Lives in the *target* namespace.
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
-  name: gateways-to-wildcard-cert
+  name: adguard-home-wildcard-cert
   namespace: cert-manager
 spec:
   from:

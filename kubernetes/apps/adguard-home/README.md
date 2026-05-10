@@ -11,10 +11,11 @@ kubernetes/apps/adguard-home/
 ├── application.yaml            # multi-source ArgoCD Application
 ├── helm-values.yaml            # bjw-s/app-template values (Deployment + admin Service + PVCs)
 └── manifests/
+    ├── namespace.yaml          # adguard-home Namespace (explicit, matches hubble-ui)
     ├── dns-service.yaml        # LoadBalancer Service pinned to 192.168.1.200 (UDP/TCP 53)
     ├── external-secret.yaml    # admin user/bcrypt-hash synced from GSM
     ├── seed-configmap.yaml     # AdGuardHome.yaml template rendered by the init container
-    ├── gateway.yaml            # Cilium Gateway pinned to 192.168.1.201, *.lab.jackhall.dev TLS
+    ├── gateway.yaml            # per-addon Cilium Gateway pinned to 192.168.1.201
     ├── httproute.yaml          # adguard.lab.jackhall.dev → admin Service
     └── reference-grant.yaml    # cross-namespace grant for the wildcard cert in cert-manager
 ```
@@ -25,15 +26,23 @@ operator's device is using AdGuard Home itself for resolution.
 
 ## LB IP allocation
 
-| Resource                        | IP               |
-|---------------------------------|------------------|
-| AdGuard Home DNS                | `192.168.1.200`  |
-| `lab-gateway` (HTTP routes)     | `192.168.1.201`  |
+| Resource                                | IP               |
+|-----------------------------------------|------------------|
+| AdGuard Home DNS                        | `192.168.1.200`  |
+| AdGuard Home admin-UI Gateway           | `192.168.1.201`  |
 
 Both come out of the `.200`–`.230` Cilium pool from
-`terraform/bootstrap`. Future addons that need their own LB IP take the
-next free address; ones that only need an HTTPS hostname attach an
-`HTTPRoute` to `lab-gateway` via cross-namespace `parentRefs`.
+`terraform/bootstrap`. The Gateway pin matters because AdGuard's seed
+wildcard rewrite `*.lab.jackhall.dev → 192.168.1.201` needs a stable
+target; without the pin, Cilium would hand out a different IP on
+restart and the rewrite would point at nothing.
+
+Following the convention `kubernetes/apps/hubble-ui/` established,
+each addon brings its own per-namespace Gateway (`from: Same`) rather
+than attaching to a shared one. Other addons therefore land on
+different pool IPs and need a per-host rewrite added in the AdGuard
+UI (`adguard.lab.jackhall.dev` → AdGuard admin → DNS settings →
+DNS rewrites).
 
 ## First-install flow
 

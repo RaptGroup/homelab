@@ -32,10 +32,10 @@ spec:
         releaseName: adguard-home
         valueFiles:
           - $values/kubernetes/apps/adguard-home/helm-values.yaml
-    - repoURL: https://github.com/jvcorredor/homelab.git
+    - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
       ref: values
-    - repoURL: https://github.com/jvcorredor/homelab.git
+    - repoURL: git@github.com:jvcorredor/homelab.git
       targetRevision: main
       path: kubernetes/apps/adguard-home/manifests
   syncPolicy:
