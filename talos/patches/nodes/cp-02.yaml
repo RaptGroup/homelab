@@ -1,0 +1,21 @@
+machine:
+  network:
+    nameservers:
+      - 192.168.1.1
+    interfaces:
+      - interface: eno1
+        dhcp: false
+        addresses:
+          - 192.168.1.246/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 192.168.1.1
+        vip:
+          ip: 192.168.1.240
+  install:
+    disk: /dev/nvme0n1
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: off
+hostname: cp-02
