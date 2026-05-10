@@ -56,3 +56,15 @@ variable "eso_sa_id" {
   type        = string
   default     = "external-secrets"
 }
+
+variable "tfstate_bucket" {
+  description = "Globally-unique name of the GCS bucket holding Terraform state for this and other homelab roots. Must match the `bucket` value hardcoded in the backend block of any root that uses it."
+  type        = string
+  default     = "rockingham-homelab-tfstate"
+}
+
+variable "tfstate_bucket_location" {
+  description = "Location for the tfstate bucket. Single region (cheaper) is fine for a homelab."
+  type        = string
+  default     = "US-CENTRAL1"
+}

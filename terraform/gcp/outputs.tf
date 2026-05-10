@@ -32,3 +32,8 @@ output "eso_sa_email" {
   description = "Service account email consumed by External Secrets Operator."
   value       = google_service_account.eso.email
 }
+
+output "tfstate_bucket" {
+  description = "Name of the GCS bucket holding Terraform state for the homelab's TF roots."
+  value       = google_storage_bucket.tfstate.name
+}

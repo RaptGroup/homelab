@@ -9,6 +9,7 @@ locals {
     "iam.googleapis.com",
     "dns.googleapis.com",
     "secretmanager.googleapis.com",
+    "storage.googleapis.com",
   ]
 }
 
@@ -78,4 +79,40 @@ resource "google_project_iam_member" "eso_secret_accessor" {
   project = google_project.lab.project_id
   role    = "roles/secretmanager.secretAccessor"
   member  = "serviceAccount:${google_service_account.eso.email}"
+}
+
+# Terraform state lives here. GCS backend uses object generations for
+# native state locking — no separate lock table needed (unlike S3+Dynamo).
+resource "google_storage_bucket" "tfstate" {
+  project  = google_project.lab.project_id
+  name     = var.tfstate_bucket
+  location = var.tfstate_bucket_location
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = false
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 10
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  depends_on = [google_project_service.enabled]
 }
