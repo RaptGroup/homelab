@@ -1,0 +1,40 @@
+# Cilium Gateway for the lab's HTTP routes. AdGuard Home is the first
+# addon to bring a Gateway, so this Gateway is owned by the adguard-home
+# Application for now; future addon HTTPRoutes attach via cross-namespace
+# parentRefs (allowedRoutes.namespaces.from: All below). Move to a
+# dedicated `kubernetes/apps/lab-gateway/` directory in a future PR if
+# the cross-ownership becomes confusing.
+#
+# IP allocation: pinned to .201 so AdGuard Home's wildcard rewrite
+# *.lab.jackhall.dev → 192.168.1.201 (seeded in AdGuardHome.yaml) lands
+# on a stable target. Sits inside the .200–.230 LB pool, just above the
+# DNS Service at .200.
+#
+# TLS: terminates at the Gateway with the wildcard cert produced by
+# terraform/bootstrap (Secret cert-manager/wildcard-lab-jackhall-dev-tls).
+# A ReferenceGrant in the cert-manager namespace authorizes this
+# cross-namespace ref (manifests/reference-grant.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: lab-gateway
+  namespace: adguard-home
+  annotations:
+    lbipam.cilium.io/ips: "192.168.1.201"
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.lab.jackhall.dev"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            name: wildcard-lab-jackhall-dev-tls
+            namespace: cert-manager
+      allowedRoutes:
+        namespaces:
+          from: All

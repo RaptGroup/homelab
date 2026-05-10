@@ -53,6 +53,11 @@ output "argocd_repo_ssh_key_id" {
   value       = google_secret_manager_secret.argocd_repo_ssh_key.secret_id
 }
 
+output "adguard_home_admin_secret_id" {
+  description = "GSM secret ID holding the AdGuard Home admin user/bcrypt-hash. Versions are uploaded out of band; see kubernetes/apps/adguard-home/README.md."
+  value       = google_secret_manager_secret.adguard_home_admin.secret_id
+}
+
 output "ci_workload_identity_provider" {
   description = "Full resource name of the GitHub OIDC Workload Identity Provider. Set this as the GCP_WIF_PROVIDER repository variable in GitHub Actions."
   value       = google_iam_workload_identity_pool_provider.github.name

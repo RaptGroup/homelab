@@ -1,0 +1,23 @@
+# Authorize the lab-gateway in adguard-home to reference the wildcard
+# cert Secret living in cert-manager. ReferenceGrant lives in the
+# *target* namespace (where the Secret is); the `from` block names the
+# referrer.
+#
+# This is the Gateway-API-sanctioned cross-namespace pattern — the
+# wildcard cert is per-cluster (one Certificate, one Secret) and every
+# Gateway that terminates TLS for `*.lab.jackhall.dev` references it
+# through a grant like this.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateways-to-wildcard-cert
+  namespace: cert-manager
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: adguard-home
+  to:
+    - group: ""
+      kind: Secret
+      name: wildcard-lab-jackhall-dev-tls

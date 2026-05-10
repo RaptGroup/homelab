@@ -74,8 +74,20 @@ This is the only thing that touches the data plane. See ADR-0002.
 
 The range Cilium hands out to `Service`s of type `LoadBalancer` via
 `CiliumLoadBalancerIPPool`. Sits above the cluster nodes' static range and
-below the broadcast end of the LAN. AdGuard Home is pinned to `.200` so
-LAN devices have one stable address to point DNS at.
+below the broadcast end of the LAN.
+
+Two IPs in the pool are pinned and load-bearing for the rest of the
+addons:
+
+- `.200` — AdGuard Home DNS. The one stable address LAN devices point
+  manual DNS at.
+- `.201` — `lab-gateway`, the shared Cilium Gateway every addon's
+  `HTTPRoute` attaches to. AdGuard Home's seed config writes
+  `*.lab.jackhall.dev → 192.168.1.201` so every addon hostname
+  resolves through this single TLS-terminating entrypoint.
+
+The remaining `.202`–`.230` are first-come-first-served for any future
+`LoadBalancer` Service.
 
 ### Static cluster range (`192.168.1.240`–`192.168.1.247`)
 
