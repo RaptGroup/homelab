@@ -35,6 +35,7 @@ locals {
                 for c in yamldecode(body).spec.template.spec.containers :
                 c.name == "local-path-provisioner"
                 ? merge(c, {
+                  # --helper-pod-namespace landed in v0.0.31; do not bump local_path_version below that or the binary fatals on startup.
                   command = concat(c.command, ["--helper-pod-namespace", "local-path-storage"])
                 })
                 : c
