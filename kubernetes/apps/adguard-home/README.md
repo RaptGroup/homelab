@@ -44,6 +44,27 @@ different pool IPs and need a per-host rewrite added in the AdGuard
 UI (`adguard.lab.jackhall.dev` → AdGuard admin → DNS settings →
 DNS rewrites).
 
+## Source IP and per-client features
+
+The DNS Service uses `externalTrafficPolicy: Cluster` (default), not
+`Local`. ETP=Local broke LAN reachability because Cilium's L2 leader
+election picked announcer nodes that didn't host the AdGuard pod, so
+packets to `192.168.1.200` were dropped (see issue #41 for the full
+diagnosis).
+
+The trade-off: AdGuard Home sees the source IP of whichever worker
+node forwarded the query via eBPF NAT, not the actual LAN client.
+Anything in the AdGuard UI that keys off client IP — Top clients,
+per-client filtering rules, per-client query log, custom blocklists
+scoped to a device — therefore can't distinguish LAN devices.
+
+Use **ClientIDs** instead when per-client behavior matters: configure
+the device to query AdGuard over DoH (`https://192.168.1.200/dns-query/<client-id>`),
+DoT (`<client-id>.dns.lab.jackhall.dev`), or by setting a PTR record
+the device's IP resolves to. ClientIDs identify clients regardless
+of source IP. Aggregate stats (total queries, blocked counts, top
+domains) are unaffected.
+
 ## First-install flow
 
 1. **Generate the admin bcrypt hash.** AdGuard Home stores the password
