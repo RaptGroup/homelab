@@ -43,3 +43,12 @@ Requires `helm`, `kubeconform`, and `yq` (mikefarah) on `$PATH`. Schemas
 for Cilium, cert-manager, Gateway API, and ESO CRDs are pulled from the
 [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog) at run
 time.
+
+The lint also enforces that every `Gateway` and every `Service` of
+`type: LoadBalancer` emitted by an app — whether from a chart's rendered
+output or from raw `manifests/` — carries an `lbipam.cilium.io/ips`
+annotation. Without the pin, Cilium hands out the first free address from
+the pool, and merge order ends up deciding which addon lands on which
+IP — exactly the failure mode that broke AdGuard Home's `.200` when
+Hubble UI grabbed it first. Pick the next free address from CONTEXT.md's
+"LB pool" table when adding a new `Gateway` or `LoadBalancer` `Service`.

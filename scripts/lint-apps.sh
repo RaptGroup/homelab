@@ -43,6 +43,50 @@ require helm
 require kubeconform
 require yq
 
+# Scan YAML files for Gateway and LoadBalancer Service resources that are
+# missing the `lbipam.cilium.io/ips` annotation. Cilium's lbipam.cilium.io
+# IPAM hands out the first free address from the pool when no pin is
+# requested; the pin is what makes the assignment deterministic across
+# re-deploys and out-of-order merges. Without it, a new addon's Gateway can
+# silently grab a pinned IP another addon depends on (see #28/#38, the
+# incidents this guard prevents). Presence-only — value format and pool
+# membership are Cilium's concern.
+check_lb_pins() {
+  local app_name="$1"
+  shift
+
+  local rc=0
+  local f
+  for f in "$@"; do
+    [[ -f "$f" ]] || continue
+
+    local missing
+    missing="$(yq eval-all '
+      select(
+        (.kind == "Gateway")
+        or
+        (.kind == "Service" and .spec.type == "LoadBalancer")
+      )
+      | select((.metadata.annotations."lbipam.cilium.io/ips" // "") == "")
+      | (.kind + " " + (.metadata.namespace // "default") + "/" + .metadata.name)
+    ' "$f")" || missing=""
+
+    if [[ -n "$missing" ]]; then
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        echo "    missing lbipam.cilium.io/ips on ${line} (source: $(basename "$f"))" >&2
+      done <<< "$missing"
+      rc=1
+    fi
+  done
+
+  if [[ $rc -ne 0 ]]; then
+    echo "    add the annotation to each resource above; see CONTEXT.md 'LB pool' for the next free IP" >&2
+  fi
+
+  return $rc
+}
+
 lint_app() {
   local app_dir="$1"
   local app_name
@@ -66,10 +110,12 @@ lint_app() {
   chart="$(yq -r '.spec.source.chart // (.spec.sources // [] | map(select(.chart != null)) | .[0].chart // "")' "$app_file")"
   version="$(yq -r '.spec.source.targetRevision // (.spec.sources // [] | map(select(.chart != null)) | .[0].targetRevision // "")' "$app_file")"
 
+  local rendered=""
+  local rc=0
+
   if [[ -n "$chart" && -n "$repo" ]]; then
     # kubeconform skips files without a recognised manifest extension, so
     # mktemp's bare name silently renders an empty validation. Force .yaml.
-    local rendered
     rendered="$(mktemp).yaml"
     local helm_args=(template "$app_name")
     # OCI repos can't be passed via --repo (helm errors with "could not
@@ -84,22 +130,35 @@ lint_app() {
     helm_args+=(--include-crds)
     [[ -n "$version" ]] && helm_args+=(--version "$version")
     [[ -f "$values_file" ]] && helm_args+=(-f "$values_file")
-    local rc=0
     helm "${helm_args[@]}" >"$rendered" \
       && kubeconform -strict -summary -skip "$SKIP_KINDS" \
         "${SCHEMA_LOCATIONS[@]}" "$rendered" \
       || rc=$?
-    rm -f "$rendered"
-    [[ $rc -ne 0 ]] && return $rc
   else
     echo "    no spec.source.chart in application.yaml — skipping helm template"
   fi
 
-  if [[ -d "$manifests_dir" ]]; then
+  if [[ $rc -eq 0 && -d "$manifests_dir" ]]; then
     echo "    manifests/"
     kubeconform -strict -summary -skip "$SKIP_KINDS" \
-      "${SCHEMA_LOCATIONS[@]}" "$manifests_dir"
+      "${SCHEMA_LOCATIONS[@]}" "$manifests_dir" || rc=$?
   fi
+
+  if [[ $rc -eq 0 ]]; then
+    local check_files=()
+    [[ -n "$rendered" ]] && check_files+=("$rendered")
+    if [[ -d "$manifests_dir" ]]; then
+      while IFS= read -r m; do
+        check_files+=("$m")
+      done < <(find "$manifests_dir" -type f \( -name '*.yaml' -o -name '*.yml' \))
+    fi
+    if [[ ${#check_files[@]} -gt 0 ]]; then
+      check_lb_pins "$app_name" "${check_files[@]}" || rc=$?
+    fi
+  fi
+
+  [[ -n "$rendered" ]] && rm -f "$rendered"
+  return $rc
 }
 
 main() {
