@@ -204,7 +204,11 @@ The third value is a secret rather than a variable because Terraform
 needs it to set the `billing_account` variable; the workflow refuses to
 plan without it. See
 [`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/tree/main/terraform/gcp#ci-github-actions-auth)
-for the operator-side wire-up commands.
+for the operator-side wire-up commands, and
+[Automation / `terraform-plan`](/homelab/automation/ci/#terraform-plan)
+for the workflow side — what runs against this SA on each PR and how
+the `bootstrap` root's plan handles having no live cluster to refresh
+against.
 
 ## State bucket
 
