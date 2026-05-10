@@ -27,10 +27,10 @@ spec:
       helm:
         valueFiles:
           - $values/kubernetes/apps/homepage/helm-values.yaml
-    - repoURL: git@github.com:jvcorredor/homelab.git
+    - repoURL: git@github.com:raptgroup/homelab.git
       targetRevision: main
       ref: values
-    - repoURL: git@github.com:jvcorredor/homelab.git
+    - repoURL: git@github.com:raptgroup/homelab.git
       targetRevision: main
       path: kubernetes/apps/homepage/manifests
   syncPolicy:
