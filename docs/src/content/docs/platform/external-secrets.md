@@ -21,7 +21,7 @@ Secret in the `external-secrets` namespace), and stops there.
 **Every other credential in the cluster flows through ESO from GSM** —
 this is the only Kubernetes `Secret` Terraform creates directly, and
 the rule is load-bearing for the
-[ADR-0001](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md)
+[ADR-0001](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md)
 boundary between Terraform and ArgoCD.
 
 ESO also has to be up before cert-manager's `ClusterIssuer`, because
@@ -32,7 +32,7 @@ by `depends_on` in `terraform/bootstrap/`. See
 ## Where the config lives
 
 Everything lives in
-[`terraform/bootstrap/external-secrets.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/external-secrets.tf):
+[`terraform/bootstrap/external-secrets.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/external-secrets.tf):
 
 - The `external-secrets` namespace and Helm release (chart version
   `0.10.7`, CRDs enabled).
@@ -101,7 +101,7 @@ Current consumers in the lab:
   Applications to credentials by repo URL automatically; this is how
   the root app-of-apps clones the homelab repo over SSH.
 - **AdGuard Home, ARC runners, …** — under
-  [`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps).
+  [`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps).
 
 ## Why ESO over `Secret`s in git
 
@@ -120,7 +120,7 @@ A few alternatives were considered and rejected:
 
 ## More
 
-[`terraform/bootstrap/external-secrets.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/external-secrets.tf)
+[`terraform/bootstrap/external-secrets.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/external-secrets.tf)
 holds the full Helm release and `ClusterSecretStore` spec. The
 operator-facing recovery procedure for a malformed SA key is in
-[`terraform/bootstrap/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/README.md#recovery-from-a-partial-apply).
+[`terraform/bootstrap/README.md`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/README.md#recovery-from-a-partial-apply).

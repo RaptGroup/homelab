@@ -21,7 +21,7 @@ VM-based design that ran on Hypercore.
 - `talos/` — Machine configurations for each node, plus the workflow for
   generating secrets, patching the base controlplane/worker configs, and
   applying them to nodes in maintenance mode. See
-  [`talos/README.md`](https://github.com/jvcorredor/homelab/tree/main/talos)
+  [`talos/README.md`](https://github.com/RaptGroup/homelab/tree/main/talos)
   for the apply and bootstrap commands.
 - `terraform/` — Two roots, split per
   [ADR-0001](/homelab/architecture/decisions/).
@@ -81,7 +81,7 @@ Cluster totals: 24 cores / 48 threads, 240 GB RAM, ~6.75 TB NVMe.
 Phase 1 cluster is up. Talos is installed on all six nodes, both
 Terraform roots apply cleanly, and the ArgoCD root `Application` is
 reconciling the addons under
-[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps):
+[`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps):
 AdGuard Home (LAN resolver behind the split-horizon setup), Homepage
 (the dashboard at `dashboard.lab.jackhall.dev`), Hubble UI, and the
 GitHub Actions Runner Controller plus its two runner scale sets. Phase 2

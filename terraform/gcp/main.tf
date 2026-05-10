@@ -216,13 +216,10 @@ resource "google_secret_manager_secret" "talos_cluster_secrets" {
 #
 # Container only, same rationale as talos-cluster-secrets above. The
 # matching public half is registered as a read-only deploy key on
-# RaptGroup/homelab. The repo is currently public, so authenticated clones
-# are not strictly required today — the SSH path is retained as
-# forward-compat with any future private repo (e.g. a temporarily-private
-# fork during an incident, or a separate secrets repo), and to keep
-# bootstrap exercising the full ESO-from-GSM credential path end-to-end as
-# a smoke test on a fresh project. ESO syncs the private key into a K8s
-# Secret in the argocd namespace labelled
+# RaptGroup/homelab. ArgoCD authenticates to GitHub through this deploy
+# key so bootstrap exercises the full ESO-from-GSM credential path end-
+# to-end as a smoke test on a fresh project. ESO syncs the private key
+# into a K8s Secret in the argocd namespace labelled
 # `argocd.argoproj.io/secret-type: repository`; the SSH URL match means
 # Argo applies it to every Application whose `repoURL` is the SSH form.
 #

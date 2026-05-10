@@ -23,8 +23,6 @@ configs:
     controller.diff.server.side: "true"
 
   cm:
-    # Lets Application manifests reference plain http/https git URLs
-    # (the homelab convention; SSH only when private repos arrive).
     timeout.reconciliation: 180s
 
     # Local account consumed by the Homepage dashboard's ArgoCD widget

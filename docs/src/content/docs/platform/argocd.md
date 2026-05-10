@@ -5,7 +5,7 @@ description: The GitOps controller that reconciles every addon under kubernetes/
 
 [ArgoCD](https://argo-cd.readthedocs.io/) is the cluster's GitOps
 controller. Every addon under
-[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps)
+[`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps)
 exists in the cluster because ArgoCD reconciles it from this repo. It is
 the last thing `terraform/bootstrap/` installs and the first thing the
 operator interacts with after the bootstrap finishes.
@@ -17,7 +17,7 @@ has no controller capable of installing it. Terraform owns the
 "hand the cluster off to ArgoCD" seam — see
 [Platform / Why Terraform](/homelab/platform/#why-these-four-are-bootstrapped-via-terraform)
 and
-[ADR-0001](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0001-iac-strategy.md)
+[ADR-0001](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0001-iac-strategy.md)
 for the full rationale. After the first `tofu apply`, Terraform's role
 in ArgoCD's lifecycle is over: chart upgrades happen through a normal PR
 (see [Self-management](#self-management) below).
@@ -26,11 +26,11 @@ in ArgoCD's lifecycle is over: chart upgrades happen through a normal PR
 
 Two directories, two responsibilities:
 
-- [`terraform/bootstrap/argocd.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/argocd.tf)
+- [`terraform/bootstrap/argocd.tf`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/argocd.tf)
   — the initial Helm release, the namespace, the GSM-backed repository
   credential, and the two `Application` manifests (self-managed +
   root).
-- [`kubernetes/bootstrap/argocd/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/bootstrap/argocd)
+- [`kubernetes/bootstrap/argocd/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/bootstrap/argocd)
   — the Helm `values.yaml` and the self-managed `Application` template.
   Both files are also referenced *post-bootstrap*: the self-managed
   `Application` reads `values.yaml` via `$values`, so a PR editing
@@ -43,11 +43,11 @@ Two directories, two responsibilities:
 | Helm chart | `argo-proj/argo-cd` (chart version `9.5.13`) |
 | UI hostname | `argocd.lab.jackhall.dev` |
 | TLS | Terminated at the [`lab` Gateway](/homelab/applications/lab-gateway/), `server.insecure: true` inside the pod |
-| Repo URL | `git@github.com:jvcorredor/homelab.git` (SSH; deploy key synced from GSM by ESO) |
+| Repo URL | `git@github.com:RaptGroup/homelab.git` (SSH; deploy key synced from GSM by ESO) |
 | Tracked revision | `main` |
 
 The `HTTPRoute` and `Gateway` attachment for the UI live under
-[`kubernetes/apps/argocd/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/argocd),
+[`kubernetes/apps/argocd/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/argocd),
 **not** in `terraform/bootstrap/`. Once ArgoCD is up, the routing layer
 in front of it is just another addon directory like any other.
 
@@ -81,7 +81,7 @@ into the `Application` manifest at apply time.
 ## The root app-of-apps
 
 A second `Application` — the root — watches the
-[`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps)
+[`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps)
 directory and turns every subdirectory into its own `Application`. This
 is the seam that makes "drop a directory and push" the entire workflow
 for adding an addon: no Terraform, no ApplicationSet generators, no UI
@@ -110,7 +110,7 @@ generator config.
 
 ## How addons interact with ArgoCD
 
-For every addon under [`kubernetes/apps/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps):
+For every addon under [`kubernetes/apps/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps):
 
 1. The addon directory holds an `application.yaml` (and usually a
    `helm-values.yaml`).
@@ -132,12 +132,12 @@ Two child `Application`s deserve special mention:
   status.terminatingReplicas`, beta since k8s 1.32) aren't in Argo's
   shipped schema and would put any addon whose live Deployment
   populates them into `ComparisonError`. See issue
-  [#40](https://github.com/jvcorredor/homelab/issues/40) for the
+  [#40](https://github.com/RaptGroup/homelab/issues/40) for the
   trigger.
 
 ## More
 
-[`terraform/bootstrap/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/bootstrap/README.md)
+[`terraform/bootstrap/README.md`](https://github.com/RaptGroup/homelab/blob/main/terraform/bootstrap/README.md)
 covers the run book — what to do on a partial apply, how to bump the
 chart version, and the `tofu output argocd_initial_admin_secret`
 shortcut for the first login.

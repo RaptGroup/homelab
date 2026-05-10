@@ -12,7 +12,7 @@ This page covers the architecture, then walks through pointing a device at
 AdGuard Home (`192.168.1.200`) as its DNS server.
 
 For the underlying decision rationale, see
-[ADR-0003: Public domain + DNS-01 + split-horizon](https://github.com/jvcorredor/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md).
+[ADR-0003: Public domain + DNS-01 + split-horizon](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0003-public-domain-dns-tls-split-horizon.md).
 
 ## Architecture
 

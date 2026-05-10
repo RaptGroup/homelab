@@ -22,7 +22,7 @@ TLS termination and the wildcard cert are the Gateway's job, not
 this addon's.
 
 Source lives at
-[`kubernetes/apps/homepage/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/homepage):
+[`kubernetes/apps/homepage/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/homepage):
 the upstream `jameswynn/homepage` chart, a `helm-values.yaml` next to
 the `Application`, and a `manifests/` directory with the `HTTPRoute`
 and an `ExternalSecret` for the widget credentials.
@@ -112,7 +112,7 @@ value as `HOMEPAGE_VAR_*` env vars on the Deployment, and the addon
 substitutions in the widget block.
 
 Two snags worth surfacing — the operator-side README at
-[`kubernetes/apps/homepage/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/homepage/README.md)
+[`kubernetes/apps/homepage/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/homepage/README.md)
 covers the rotation procedures in full:
 
 - The AdGuard widget needs the **plaintext** password; AdGuard
@@ -145,7 +145,7 @@ setup, which is the cluster's implicit trust boundary.
 ## More
 
 The repo-side README at
-[`kubernetes/apps/homepage/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/homepage/README.md)
+[`kubernetes/apps/homepage/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/homepage/README.md)
 covers the first-install flow (decide AdGuard creds → mint ArgoCD
 token → upload to GSM → sync), the credential rotation procedures,
 and the disaster-recovery story (Homepage is stateless; the only

@@ -18,7 +18,7 @@ and `hubble.ui.enabled` are flipped on in `terraform/bootstrap/cilium.tf`,
 so the workload itself lives in `kube-system` alongside Cilium.
 
 A separate ArgoCD addon
-([`kubernetes/apps/hubble-ui/`](https://github.com/jvcorredor/homelab/tree/main/kubernetes/apps/hubble-ui))
+([`kubernetes/apps/hubble-ui/`](https://github.com/RaptGroup/homelab/tree/main/kubernetes/apps/hubble-ui))
 owns only the routing layer that exposes the existing Service:
 
 - A `hubble-ui` namespace (which doesn't host the workload — it hosts
@@ -89,13 +89,13 @@ gethomepage.dev/namespace: kube-system
 ```
 
 The convention is documented in
-[`kubernetes/apps/homepage/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/homepage/README.md#status-discovery-overrides);
+[`kubernetes/apps/homepage/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/homepage/README.md#status-discovery-overrides);
 without these annotations the card renders **NOT FOUND**.
 
 ## More
 
 The repo-side README at
-[`kubernetes/apps/hubble-ui/README.md`](https://github.com/jvcorredor/homelab/blob/main/kubernetes/apps/hubble-ui/README.md)
+[`kubernetes/apps/hubble-ui/README.md`](https://github.com/RaptGroup/homelab/blob/main/kubernetes/apps/hubble-ui/README.md)
 covers the cross-namespace routing topology in more detail and explains
 why the workload lives in `kube-system` while the routing layer is a
 separate addon directory.
