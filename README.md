@@ -59,3 +59,24 @@ cd docs
 npm install
 npm run dev
 ```
+
+## Secrets scanning
+
+[`.github/workflows/secrets-scan.yml`](./.github/workflows/secrets-scan.yml)
+runs `gitleaks` against the PR diff on every pull request. The repo follows
+a GSM + ESO pattern so credentials should never land in tree; this job
+catches the slip-up before merge.
+
+If the job fails, the finding's commit SHA and rule are in the workflow
+log (the value itself is redacted). Don't try to "fix forward" by deleting
+the secret in a new commit — the secret is still in the branch's history
+and any rotation has to assume it was leaked. The usual recovery:
+
+```sh
+git rebase -i <commit-before-the-leak>   # drop the offending commit
+git push --force-with-lease               # rewrite the PR branch
+```
+
+Then rotate the credential out-of-band before re-requesting review. A
+one-time full-history baseline scan was done in #84; this workflow is the
+prevention layer for new commits.
