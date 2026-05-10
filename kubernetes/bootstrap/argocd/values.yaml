@@ -13,6 +13,15 @@ configs:
     # internal hop plaintext and avoids cert plumbing inside the pod.
     server.insecure: true
 
+    # Delegate diff calculation to the kube-apiserver (server-side dry-run)
+    # instead of Argo's bundled openapi-v2 schema. Required because newer
+    # API-server fields (e.g. Deployment.status.terminatingReplicas, beta
+    # since k8s 1.32) aren't in the schema Argo's structured-merge library
+    # ships with, and any Application whose live Deployment populates such
+    # a field gets stuck in ComparisonError. Cluster-wide by design — the
+    # next schema drift would hit a different addon otherwise. (#40)
+    controller.diff.server.side: "true"
+
   cm:
     # Lets Application manifests reference plain http/https git URLs
     # (the homelab convention; SSH only when private repos arrive).
