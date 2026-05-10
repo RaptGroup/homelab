@@ -14,8 +14,13 @@ Machine configuration for the `rockingham` Talos cluster.
 
 - Name: `rockingham`
 - Control plane endpoint: `https://192.168.1.240:6443` (shared VIP)
-- Nodes:
-  - `cp-01` — `192.168.1.245`, install disk `/dev/nvme0n1`, NIC `eno1`
+- Nodes (install disk `/dev/nvme0n1`, NIC `eno1` on every node):
+  - `cp-01` — `192.168.1.245` (carries the `.240` VIP)
+  - `cp-02` — `192.168.1.246` (carries the `.240` VIP)
+  - `cp-03` — `192.168.1.247` (carries the `.240` VIP)
+  - `worker-01` — `192.168.1.241`
+  - `worker-02` — `192.168.1.242`
+  - `worker-03` — `192.168.1.243`
 
 ## First-time generation
 
