@@ -15,14 +15,26 @@ metadata:
     gethomepage.dev/description: Cilium network flow visualizer
     gethomepage.dev/href: https://hubble.lab.jackhall.dev
 spec:
+  # The Gateway API admission webhook defaults parentRef group/kind, the
+  # backendRef weight, and the implicit "PathPrefix /" match block when
+  # they're omitted. Argo with strict comparison flags those server-side
+  # additions as drift, so spell them out here verbatim — the file is then
+  # what the API server actually stores.
   parentRefs:
-    - name: hubble-ui
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: hubble-ui
   hostnames:
     - hubble.lab.jackhall.dev
   rules:
-    - backendRefs:
-        - kind: Service
-          group: ""
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
           name: hubble-ui
           namespace: kube-system
           port: 80
+          weight: 1
