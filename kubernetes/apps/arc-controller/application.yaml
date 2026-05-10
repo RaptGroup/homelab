@@ -1,0 +1,42 @@
+# Actions Runner Controller (ARC) — the controller half of the
+# `gha-runner-scale-set` two-chart pattern. Owns the AutoscalingRunnerSet
+# CRD and reconciles every per-scope scale set installed alongside it
+# (arc-runners-personal, arc-runners-brazostech).
+#
+# Multi-source: chart from ghcr.io/actions, values from helm-values.yaml in
+# this repo. Both scale sets reference the controller SA by a fixed name —
+# kept stable via fullnameOverride in helm-values.yaml so the cross-chart
+# reference doesn't drift on a release rename.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arc-controller
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-systems
+  sources:
+    - repoURL: ghcr.io/actions/actions-runner-controller-charts
+      chart: gha-runner-scale-set-controller
+      targetRevision: 0.14.1
+      helm:
+        valueFiles:
+          - $values/kubernetes/apps/arc-controller/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/arc-controller/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

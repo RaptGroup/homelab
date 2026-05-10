@@ -1,0 +1,40 @@
+# gha-runner-scale-set values for the brazostech pool.
+# Targets the brazostech org. Backed by the same `Rockingham Homelab ARC`
+# GitHub App as the personal pool, but a distinct installation. Workflows
+# opt in with `runs-on: [self-hosted, brazostech]`.
+#
+# Scale Computing — the user's employer org — is intentionally out of
+# scope. The boundary is enforced server-side by GitHub: the App is not
+# installed on Scale Computing, so its installation token can't reach
+# any Scale Computing repo even from inside this pool's runners.
+
+githubConfigUrl: https://github.com/brazostech
+
+# Variation C — pre-existing K8s Secret populated by ESO from GSM
+# (see manifests/external-secret.yaml). The installation ID for this
+# pool is the brazostech-org installation; the App ID and private key
+# are shared with the personal pool.
+githubConfigSecret: arc-runners-brazostech-github-config
+
+controllerServiceAccount:
+  namespace: arc-systems
+  name: arc-gha-rs-controller
+
+scaleSetLabels:
+  - linux
+  - brazostech
+
+minRunners: 0
+maxRunners: 4
+
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+            ephemeral-storage: 10Gi
