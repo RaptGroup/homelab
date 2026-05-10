@@ -1,7 +1,30 @@
 variable "project_id" {
-  description = "ID of the GCP project that owns the homelab's external resources. Must already exist; see README for the gcloud command to create it."
+  description = "ID of the GCP project this root creates and owns. Must be globally unique across GCP."
   type        = string
   default     = "rockingham-homelab"
+}
+
+variable "project_name" {
+  description = "Human-readable display name for the project."
+  type        = string
+  default     = "Rockingham Homelab"
+}
+
+variable "billing_account" {
+  description = "Billing account ID (e.g. 0X0X0X-0X0X0X-0X0X0X) to attach the project to. Find with `gcloud billing accounts list`."
+  type        = string
+}
+
+variable "org_id" {
+  description = "Optional organization ID to nest the project under. Leave null for personal accounts with no org."
+  type        = string
+  default     = null
+}
+
+variable "folder_id" {
+  description = "Optional folder ID to nest the project under. Mutually exclusive with org_id. Leave null for personal accounts."
+  type        = string
+  default     = null
 }
 
 variable "region" {

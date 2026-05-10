@@ -1,6 +1,11 @@
 output "project_id" {
   description = "GCP project that owns the homelab's external resources."
-  value       = var.project_id
+  value       = google_project.lab.project_id
+}
+
+output "project_number" {
+  description = "Numeric project number (some IAM bindings and APIs want this rather than the ID)."
+  value       = google_project.lab.number
 }
 
 output "lab_zone_name" {
