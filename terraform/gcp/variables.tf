@@ -90,7 +90,7 @@ variable "tfstate_bucket_location" {
 variable "github_repository" {
   description = "owner/repo of the GitHub repository allowed to impersonate the CI service account via Workload Identity Federation. Locks the WIF provider to a single repo so an OIDC token issued elsewhere cannot reach this project."
   type        = string
-  default     = "raptgroup/homelab"
+  default     = "RaptGroup/homelab"
 }
 
 variable "tf_ci_sa_id" {
