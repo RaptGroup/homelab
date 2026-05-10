@@ -43,8 +43,64 @@ resource "google_project_service" "enabled" {
   disable_on_destroy = false
 }
 
-# Public managed zone delegated from the registrar via NS records on the
-# parent jackhall.dev zone. cert-manager creates ACME TXT records here.
+# Apex `jackhall.dev` zone. Squarespace's nameserver field for the domain
+# already points at Cloud DNS (the lab subzone NS got applied at the apex
+# level when the user delegated), so the apex *has* to live in Cloud DNS
+# too — otherwise the assigned ns-cloud-* nameservers return REFUSED for
+# anything at the apex and Let's Encrypt's CAA walk SERVFAILs while
+# trying to issue `*.lab.jackhall.dev` (the walk goes
+# `*.lab.jackhall.dev` → `lab.jackhall.dev` → `jackhall.dev` → `dev`).
+#
+# This zone holds only what the apex genuinely needs — an SOA/NS pair
+# (auto-managed by Cloud DNS), the explicit CAA permitting Let's Encrypt,
+# and an in-bailiwick NS record delegating `lab.jackhall.dev` to the
+# subzone below. No A/AAAA at the apex; the homelab does not host
+# anything at `jackhall.dev` itself.
+resource "google_dns_managed_zone" "apex" {
+  project     = google_project.lab.project_id
+  name        = var.apex_zone_name
+  dns_name    = "${var.apex_dns_name}."
+  description = "Rockingham Homelab — apex jackhall.dev. Holds the CAA record for Let's Encrypt and the NS delegation for lab.jackhall.dev. Squarespace must point the registrar nameserver field at this zone's name_servers."
+  visibility  = "public"
+
+  depends_on = [google_project_service.enabled]
+}
+
+# CAA at the apex. Without this, LE's CAA lookup at every level above
+# `*.lab.jackhall.dev` (`lab.jackhall.dev`, `jackhall.dev`, `dev`) finds
+# nothing and falls through to the default-allow — that already works
+# once the apex resolves at all. The explicit record is defense in depth:
+# any future certificate issued for jackhall.dev or below has to go
+# through Let's Encrypt.
+resource "google_dns_record_set" "apex_caa" {
+  project      = google_project.lab.project_id
+  managed_zone = google_dns_managed_zone.apex.name
+  name         = google_dns_managed_zone.apex.dns_name
+  type         = "CAA"
+  ttl          = 300
+
+  rrdatas = concat(
+    [for issuer in var.apex_caa_issuers : "0 issue \"${issuer}\""],
+    [for issuer in var.apex_caa_issuers : "0 issuewild \"${issuer}\""],
+  )
+}
+
+# Delegation NS for the lab subzone. With both apex and lab in Cloud DNS
+# this is technically redundant for resolution (whichever ns-cloud-* the
+# resolver hits already serves both zones), but standard practice — and
+# it's what makes the lab subzone delegation visible in `dig +trace`.
+resource "google_dns_record_set" "apex_lab_delegation" {
+  project      = google_project.lab.project_id
+  managed_zone = google_dns_managed_zone.apex.name
+  name         = google_dns_managed_zone.lab.dns_name
+  type         = "NS"
+  ttl          = 21600
+
+  rrdatas = google_dns_managed_zone.lab.name_servers
+}
+
+# Public managed zone delegated from the apex via the NS record above.
+# cert-manager creates ACME TXT records here.
 resource "google_dns_managed_zone" "lab" {
   project     = google_project.lab.project_id
   name        = var.lab_zone_name

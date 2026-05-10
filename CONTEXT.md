@@ -19,9 +19,21 @@ config, kubeconfig contexts, and dashboard branding. Not a hostname.
 ### `lab.jackhall.dev`
 
 The DNS subzone used for every internal cluster service
-(`dashboard.lab.jackhall.dev`, `argocd.lab.jackhall.dev`, etc.). It is
-NS-delegated from `jackhall.dev` to Google Cloud DNS at the registrar. The
-apex `jackhall.dev` is unrelated and untouched by this repo.
+(`dashboard.lab.jackhall.dev`, `argocd.lab.jackhall.dev`, etc.).
+NS-delegated from the apex `jackhall.dev` zone (also in Cloud DNS) to
+its own Cloud DNS managed zone.
+
+### `jackhall.dev` (apex)
+
+The apex domain is hosted in Cloud DNS in this repo's GCP project. The
+registrar (Squarespace) was pointed at Cloud DNS nameservers when the
+lab subzone was delegated, but those NS were applied at the apex
+nameserver field rather than as a subdomain delegation, so the apex
+has to live in Cloud DNS too — without it, queries at the apex return
+REFUSED and Let's Encrypt's CAA walk SERVFAILs while trying to issue
+`*.lab.jackhall.dev`. The apex zone holds the CAA record (Let's
+Encrypt-only) and the NS delegation for the lab subzone; nothing else
+is hosted at `jackhall.dev` itself.
 
 ### Split-horizon DNS
 
