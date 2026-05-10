@@ -216,7 +216,7 @@ resource "google_secret_manager_secret" "talos_cluster_secrets" {
 #
 # Container only, same rationale as talos-cluster-secrets above. The
 # matching public half is registered as a read-only deploy key on
-# raptgroup/homelab. The repo is currently public, so authenticated clones
+# RaptGroup/homelab. The repo is currently public, so authenticated clones
 # are not strictly required today — the SSH path is retained as
 # forward-compat with any future private repo (e.g. a temporarily-private
 # fork during an incident, or a separate secrets repo), and to keep

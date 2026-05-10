@@ -19,7 +19,7 @@ from there.
 
 When `spec.source.repoURL` points back at this repo (path-based addons
 that ship raw manifests instead of a chart), use the SSH form
-`git@github.com:raptgroup/homelab.git`. The repo is currently public, so
+`git@github.com:RaptGroup/homelab.git`. The repo is currently public, so
 authenticated clones aren't strictly required — the SSH path is retained
 for forward-compat with any future private repo (e.g. a temporarily-private
 fork during an incident, or a separate secrets repo). ArgoCD authenticates

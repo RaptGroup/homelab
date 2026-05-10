@@ -49,7 +49,7 @@ variable "control_plane_node_selector" {
 variable "argocd_repo_url" {
   description = "Git repository ArgoCD reads bootstrap manifests from (the root app-of-apps and the self-managed argocd Application). SSH form is retained for forward-compat with any future private repo (e.g. a temporarily-private fork or a separate secrets repo); the deploy key is synced from GSM by ESO into a labelled `repository` Secret in the argocd namespace, identical to every other ESO-from-GSM credential in this bootstrap."
   type        = string
-  default     = "git@github.com:raptgroup/homelab.git"
+  default     = "git@github.com:RaptGroup/homelab.git"
 }
 
 variable "argocd_target_revision" {

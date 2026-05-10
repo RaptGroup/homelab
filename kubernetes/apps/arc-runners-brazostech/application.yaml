@@ -23,10 +23,10 @@ spec:
       helm:
         valueFiles:
           - $values/kubernetes/apps/arc-runners-brazostech/helm-values.yaml
-    - repoURL: git@github.com:raptgroup/homelab.git
+    - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       ref: values
-    - repoURL: git@github.com:raptgroup/homelab.git
+    - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       path: kubernetes/apps/arc-runners-brazostech/manifests
   syncPolicy:
