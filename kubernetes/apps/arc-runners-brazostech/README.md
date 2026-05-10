@@ -32,7 +32,22 @@ source-layout rationale, the GitHub App + GSM topology, and the
 generic operational details — both pools follow the same shape. This
 README only covers what's specific to the brazostech pool.
 
-## GSM credential keyed to this pool
+## Installation scope (least privilege)
+
+The brazostech installation runs with `repository_selection: selected`,
+mirroring the RaptGroup pool. See
+`kubernetes/apps/arc-runners-raptgroup/README.md` for the rationale and
+the procedure for widening the allowlist when a new workflow targets
+self-hosted runners.
+
+No brazostech repo currently has a `runs-on: self-hosted` workflow, so
+the allowlist is whatever minimum the App needs to remain installed at
+the org level. The pool's listener authenticates against the *org*
+(`https://github.com/brazostech`), so the org-level installation itself
+is what makes the scale set work — the per-repo allowlist gates which
+repos' workflows can dispatch to it.
+
+
 
 The scale-set installation ID for this pool is unique:
 

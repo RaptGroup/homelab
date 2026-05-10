@@ -154,6 +154,12 @@ system-extension upgrade pass (`siderolabs/iscsi-tools`,
 Two scale sets, both backed by the same `Rockingham Homelab ARC` GitHub App
 with two installations. Workflows pick a pool through the `runs-on:` label.
 
+The GitHub App installation IS the access boundary for cluster-reaching CI,
+so both installations run with `repository_selection: selected` — never
+`all`. The allowlist is the precise set of repos with workflows that target
+a self-hosted runner; adding a new such workflow means adding the repo to
+the corresponding install at the same time.
+
 ### `arc-systems`
 
 The namespace the ARC controller (`gha-runner-scale-set-controller` chart)
@@ -167,7 +173,9 @@ GitHub App Secret are isolated per scope.
 
 Targets `https://github.com/RaptGroup` — the operator's personal-projects
 GitHub org. Workflows opt in with `runs-on: [self-hosted, linux, raptgroup]`.
-Backed by the GitHub App installation on the RaptGroup org.
+Backed by the GitHub App installation on the RaptGroup org, scoped to a
+selected-repo allowlist (currently `RaptGroup/homelab` and
+`RaptGroup/zipmenu-public`).
 
 `RaptGroup` exists because ARC's chart can't serve user-account scopes
 (only repository, org, or enterprise URLs work). Personal repos that
@@ -178,8 +186,9 @@ maintaining one repo-scoped scale set per repo.
 
 Targets `https://github.com/brazostech`. Workflows opt in with
 `runs-on: [self-hosted, linux, brazostech]`. Backed by the GitHub App
-installation on the `brazostech` org. **Not** installed on Scale Computing;
-that boundary is enforced server-side by GitHub.
+installation on the `brazostech` org, also pinned to a selected-repo
+allowlist. **Not** installed on Scale Computing; that boundary is enforced
+server-side by GitHub.
 
 Both scale sets default to `minRunners: 0`, `maxRunners: 4`, 500m CPU /
 1Gi RAM / 10Gi ephemeral, ephemeral pods, no container mode.
