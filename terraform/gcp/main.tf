@@ -5,6 +5,15 @@ provider "google" {
 
 locals {
   required_apis = [
+    # serviceusage is the API that tofu itself calls to read/manage every
+    # other google_project_service resource. It must be enabled before any
+    # plan or apply that authenticates via a SA whose quota project is this
+    # project (CI does — local ADC usually routes quota through the user's
+    # personal default project, which masks this in dev). On a fresh GCP
+    # account, enable it once by hand:
+    #   gcloud services enable serviceusage.googleapis.com \
+    #     --project=rockingham-homelab
+    "serviceusage.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "dns.googleapis.com",
@@ -115,4 +124,75 @@ resource "google_storage_bucket" "tfstate" {
   }
 
   depends_on = [google_project_service.enabled]
+}
+
+# --- CI: Workload Identity Federation for GitHub Actions ---------------------
+#
+# The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on
+# GitHub-hosted runners and authenticates to GCP via OIDC instead of a
+# long-lived JSON key. The pieces:
+#
+#   1. A pool that trusts GitHub's OIDC issuer.
+#   2. A provider in that pool, with an attribute_condition locking the trust
+#      to ${var.github_repository} so an OIDC token issued for any other repo
+#      is rejected before it can reach the SA.
+#   3. A plan-only service account with project-scoped roles/viewer — enough
+#      to read state and the current resource graph, structurally insufficient
+#      to apply changes.
+#   4. A workloadIdentityUser binding allowing the GitHub repo (any branch,
+#      any actor) to impersonate (3).
+
+resource "google_iam_workload_identity_pool" "github_actions" {
+  project                   = google_project.lab.project_id
+  workload_identity_pool_id = "github-actions"
+  display_name              = "GitHub Actions"
+  description               = "OIDC pool trusted by GitHub Actions runners; per-repo trust is enforced on the provider, not the pool."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  project                            = google_project.lab.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github"
+  display_name                       = "GitHub OIDC"
+  description                        = "Trusts GitHub-issued OIDC tokens; locked to ${var.github_repository}."
+
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.repository" = "assertion.repository"
+    "attribute.ref"        = "assertion.ref"
+    "attribute.actor"      = "assertion.actor"
+  }
+
+  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+# Plan-only. roles/viewer covers everything `tofu plan` needs to read across
+# the project (DNS, IAM, Storage objects in the tfstate bucket, project
+# metadata) and is intentionally insufficient to mutate anything. Apply
+# remains operator-only on a workstation with ADC.
+resource "google_service_account" "tf_ci" {
+  project      = google_project.lab.project_id
+  account_id   = var.tf_ci_sa_id
+  display_name = "Terraform CI plan-only"
+  description  = "Used by .github/workflows/terraform-plan.yml. Project-scoped roles/viewer; cannot apply."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_project_iam_member" "tf_ci_viewer" {
+  project = google_project.lab.project_id
+  role    = "roles/viewer"
+  member  = "serviceAccount:${google_service_account.tf_ci.email}"
+}
+
+resource "google_service_account_iam_member" "tf_ci_wif_user" {
+  service_account_id = google_service_account.tf_ci.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
 }

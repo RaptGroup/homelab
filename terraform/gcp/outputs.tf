@@ -37,3 +37,13 @@ output "tfstate_bucket" {
   description = "Name of the GCS bucket holding Terraform state for the homelab's TF roots."
   value       = google_storage_bucket.tfstate.name
 }
+
+output "ci_workload_identity_provider" {
+  description = "Full resource name of the GitHub OIDC Workload Identity Provider. Set this as the GCP_WIF_PROVIDER repository variable in GitHub Actions."
+  value       = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "ci_service_account_email" {
+  description = "Email of the plan-only CI service account. Set this as the GCP_CI_SA repository variable in GitHub Actions."
+  value       = google_service_account.tf_ci.email
+}

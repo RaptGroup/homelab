@@ -1,0 +1,239 @@
+name: Terraform plan
+
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-plan.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: terraform-plan-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOFU_VERSION: "1.8.5"
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.changed.outputs.roots }}
+      any_changed: ${{ steps.changed.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected roots
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Hardcoded root list — auto-discovery would pick up sub-modules.
+          # New roots get added here explicitly.
+          candidates=(gcp bootstrap)
+
+          # If the workflow itself changed, re-plan every root that exists
+          # in the PR (same pattern as apps-lint.yml).
+          workflow_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+              '.github/workflows/terraform-plan.yml' \
+            | head -n1 || true)
+
+          changed=()
+          for root in "${candidates[@]}"; do
+            # Skip roots that don't exist in the PR commit yet (e.g. bootstrap
+            # before #11 lands).
+            [[ -d "terraform/${root}" ]] || continue
+
+            if [[ -n "$workflow_changed" ]]; then
+              changed+=("$root")
+              continue
+            fi
+
+            if ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- "terraform/${root}/"; then
+              changed+=("$root")
+            fi
+          done
+
+          if [[ ${#changed[@]} -eq 0 ]]; then
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+            echo 'roots=[]' >> "$GITHUB_OUTPUT"
+            echo "(no roots affected)"
+          else
+            json=$(printf '%s\n' "${changed[@]}" | jq -R -s -c 'split("\n") | map(select(length>0))')
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            echo "roots=$json" >> "$GITHUB_OUTPUT"
+            printf 'affected: %s\n' "${changed[@]}"
+          fi
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      - name: tofu fmt -check
+        run: tofu fmt -check -recursive terraform/
+
+  plan:
+    needs: [detect, fmt]
+    if: needs.detect.outputs.any_changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.detect.outputs.roots) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Fail loud and early when CI hasn't been wired up yet. Without this
+      # the auth step below fails with a generic "specify exactly one of
+      # workload_identity_provider or credentials_json" error that doesn't
+      # point at the actual cause (missing repo variables).
+      - name: Verify CI configuration
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          CI_SA: ${{ vars.GCP_CI_SA }}
+          BILLING_ACCOUNT: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "${WIF_PROVIDER}" ]]    && missing+=("variable GCP_WIF_PROVIDER")
+          [[ -z "${CI_SA}" ]]           && missing+=("variable GCP_CI_SA")
+          [[ -z "${BILLING_ACCOUNT}" ]] && missing+=("secret GCP_BILLING_ACCOUNT")
+
+          if (( ${#missing[@]} > 0 )); then
+            {
+              echo "::error::Terraform plan workflow is not wired up. Missing: ${missing[*]}"
+              echo
+              echo "Get the values:"
+              echo "  cd terraform/gcp"
+              echo "  tofu output -raw ci_workload_identity_provider   # GCP_WIF_PROVIDER"
+              echo "  tofu output -raw ci_service_account_email        # GCP_CI_SA"
+              echo
+              echo "Then set them in GitHub: Settings → Secrets and variables → Actions"
+              echo "  Variables tab: GCP_WIF_PROVIDER, GCP_CI_SA"
+              echo "  Secrets tab:   GCP_BILLING_ACCOUNT (same value as terraform.tfvars)"
+              echo
+              echo "See terraform/gcp/README.md, section \"CI: GitHub Actions auth\"."
+            } >&2
+            exit 1
+          fi
+
+      - name: Authenticate to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      - name: tofu init
+        working-directory: terraform/${{ matrix.root }}
+        run: tofu init -input=false -lockfile=readonly
+
+      - name: tofu validate
+        working-directory: terraform/${{ matrix.root }}
+        run: tofu validate -no-color
+
+      - name: tofu plan
+        id: plan
+        working-directory: terraform/${{ matrix.root }}
+        env:
+          # CI passes required tfvars via TF_VAR_* env vars from secrets.
+          # Variables that are sensitive or absent from a checked-in
+          # *.tfvars file (those are gitignored) must be wired here.
+          TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: |
+          set +e
+          tofu plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan \
+            > plan.txt 2>&1
+          rc=$?
+          set -e
+
+          # Detailed exit codes:
+          #   0 = no changes
+          #   1 = error
+          #   2 = changes present (NORMAL for a TF-touching PR)
+          if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+            echo "::error::tofu plan failed with exit code $rc"
+            cat plan.txt
+            echo "exitcode=$rc" >> "$GITHUB_OUTPUT"
+            exit $rc
+          fi
+
+          echo "exitcode=$rc" >> "$GITHUB_OUTPUT"
+          # Print to job log for direct viewing.
+          cat plan.txt
+
+      - name: Render PR comment
+        if: always() && steps.plan.conclusion != 'skipped'
+        env:
+          ROOT: ${{ matrix.root }}
+          EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        working-directory: terraform/${{ matrix.root }}
+        run: |
+          set -euo pipefail
+
+          case "${EXITCODE:-}" in
+            0) summary="No changes. Infrastructure matches configuration." ;;
+            2) summary="Changes detected. Review the plan before merging." ;;
+            *) summary="Plan failed (exit code ${EXITCODE:-unknown}). Job log: ${RUN_URL}" ;;
+          esac
+
+          # GitHub PR comment limit is 65,536 chars; cap raw plan to ~60k to
+          # leave headroom for the surrounding markdown. printf avoids a
+          # multi-line bash string literal — those interact badly with the
+          # surrounding YAML block-scalar indent rules.
+          plan_body="$(cat plan.txt 2>/dev/null || echo '(no plan output captured)')"
+          max=60000
+          if [[ ${#plan_body} -gt $max ]]; then
+            head_chunk="${plan_body:0:$((max/2))}"
+            tail_chunk="${plan_body: -$((max/2))}"
+            plan_body="$(printf '%s\n\n... [truncated; full output in job log: %s] ...\n\n%s' "$head_chunk" "$RUN_URL" "$tail_chunk")"
+          fi
+
+          {
+            echo "## Terraform plan: \`terraform/${ROOT}/\`"
+            echo
+            echo "**${summary}**"
+            echo
+            echo "Commit: \`${HEAD_SHA}\` · [Job log](${RUN_URL})"
+            echo
+            echo '<details><summary>Plan output</summary>'
+            echo
+            echo '```hcl'
+            printf '%s\n' "$plan_body"
+            echo '```'
+            echo
+            echo '</details>'
+          } > "${RUNNER_TEMP}/comment-${ROOT}.md"
+
+          echo "comment_path=${RUNNER_TEMP}/comment-${ROOT}.md" >> "$GITHUB_OUTPUT"
+        id: comment
+
+      - name: Post sticky PR comment
+        if: always() && steps.comment.outputs.comment_path != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-plan-${{ matrix.root }}
+          path: ${{ steps.comment.outputs.comment_path }}
