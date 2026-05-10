@@ -34,6 +34,10 @@ export default defineConfig({
           autogenerate: { directory: 'networking' },
         },
         {
+          label: 'Platform',
+          autogenerate: { directory: 'platform' },
+        },
+        {
           label: 'Applications',
           autogenerate: { directory: 'applications' },
         },

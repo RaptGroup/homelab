@@ -34,6 +34,13 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     pool on the LAN and split-horizon DNS with AdGuard Home in front of
     `lab.jackhall.dev`.
   </Card>
+  <Card title="Platform" icon="rocket">
+    The cluster-side services Terraform installs before ArgoCD takes
+    over — ArgoCD itself, cert-manager, External Secrets Operator,
+    and local-path-provisioner. See the
+    [Platform overview](./platform/) for the bootstrap order and how
+    they interact.
+  </Card>
   <Card title="Applications" icon="puzzle">
     The ArgoCD-managed addons running in the cluster — AdGuard Home,
     Homepage, Hubble UI, the `lab` Gateway, ARC runners, metrics-server.

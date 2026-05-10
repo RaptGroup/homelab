@@ -30,7 +30,9 @@ VM-based design that ran on Hypercore.
   `terraform/bootstrap/` brings a fresh Talos cluster from "kubeconfig
   works, nothing installed" to "ArgoCD reconciles `kubernetes/apps/`" —
   Gateway API CRDs, Cilium, cert-manager, External Secrets Operator,
-  local-path-provisioner, and ArgoCD itself.
+  local-path-provisioner, and ArgoCD itself. The four
+  non-Cilium services are documented in the
+  [Platform section](/homelab/platform/).
 - `kubernetes/` — Everything ArgoCD reconciles after bootstrap.
   `kubernetes/bootstrap/` holds the root `Application` and the ArgoCD
   values consumed by the bootstrap Terraform; `kubernetes/apps/` is one
