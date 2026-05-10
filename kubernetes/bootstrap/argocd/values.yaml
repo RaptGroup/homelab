@@ -17,3 +17,17 @@ configs:
     # Lets Application manifests reference plain http/https git URLs
     # (the homelab convention; SSH only when private repos arrive).
     timeout.reconciliation: 180s
+
+    # Local account consumed by the Homepage dashboard's ArgoCD widget
+    # (kubernetes/apps/homepage/). `apiKey` (not `login`) lets the account
+    # mint API tokens but not log in to the UI, so a leaked token is
+    # bounded to API reads only.
+    accounts.homepage: apiKey
+    accounts.homepage.enabled: "true"
+
+  rbac:
+    # `role:readonly` is the chart's built-in role granting `get` on every
+    # resource cluster-wide — exactly what the Homepage widget needs and
+    # structurally incapable of mutating state.
+    policy.csv: |
+      g, homepage, role:readonly
