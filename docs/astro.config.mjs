@@ -10,9 +10,13 @@ export default defineConfig({
       title: 'Rockingham Homelab',
       description:
         'Documentation for the Rockingham Homelab: a 6-node bare-metal Kubernetes cluster running Talos Linux.',
-      social: {
-        github: 'https://github.com/RaptGroup/homelab',
-      },
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/RaptGroup/homelab',
+        },
+      ],
       editLink: {
         baseUrl: 'https://github.com/RaptGroup/homelab/edit/main/docs/',
       },
@@ -27,27 +31,27 @@ export default defineConfig({
         },
         {
           label: 'Architecture',
-          autogenerate: { directory: 'architecture' },
+          items: [{ autogenerate: { directory: 'architecture' } }],
         },
         {
           label: 'Networking',
-          autogenerate: { directory: 'networking' },
+          items: [{ autogenerate: { directory: 'networking' } }],
         },
         {
           label: 'Cloud',
-          autogenerate: { directory: 'cloud' },
+          items: [{ autogenerate: { directory: 'cloud' } }],
         },
         {
           label: 'Platform',
-          autogenerate: { directory: 'platform' },
+          items: [{ autogenerate: { directory: 'platform' } }],
         },
         {
           label: 'Applications',
-          autogenerate: { directory: 'applications' },
+          items: [{ autogenerate: { directory: 'applications' } }],
         },
         {
           label: 'Automation',
-          autogenerate: { directory: 'automation' },
+          items: [{ autogenerate: { directory: 'automation' } }],
         },
       ],
     }),
