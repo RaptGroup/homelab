@@ -201,17 +201,15 @@ jobs:
           esac
 
           # GitHub PR comment limit is 65,536 chars; cap raw plan to ~60k to
-          # leave headroom for the surrounding markdown.
+          # leave headroom for the surrounding markdown. printf avoids a
+          # multi-line bash string literal — those interact badly with the
+          # surrounding YAML block-scalar indent rules.
           plan_body="$(cat plan.txt 2>/dev/null || echo '(no plan output captured)')"
           max=60000
           if [[ ${#plan_body} -gt $max ]]; then
             head_chunk="${plan_body:0:$((max/2))}"
             tail_chunk="${plan_body: -$((max/2))}"
-            plan_body="${head_chunk}
-
-... [truncated; full output in job log: ${RUN_URL}] ...
-
-${tail_chunk}"
+            plan_body="$(printf '%s\n\n... [truncated; full output in job log: %s] ...\n\n%s' "$head_chunk" "$RUN_URL" "$tail_chunk")"
           fi
 
           {
