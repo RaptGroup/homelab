@@ -30,6 +30,10 @@ export default defineConfig({
           autogenerate: { directory: 'infrastructure' },
         },
         {
+          label: 'Networking',
+          autogenerate: { directory: 'networking' },
+        },
+        {
           label: 'Operations',
           autogenerate: { directory: 'operations' },
         },
