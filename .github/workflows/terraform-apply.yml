@@ -1,0 +1,173 @@
+name: Terraform apply (gcp)
+
+# Slice 1: workflow_dispatch only. Slice 2 will layer push:main auto-trigger
+# on top once we have a sense of how often this runs in practice.
+#
+# This workflow is per-root: there is one terraform-apply-*.yml per Terraform
+# root, keyed to a GitHub deployment environment of the same name (gcp ↔
+# terraform/gcp/). Each environment has its own approver list, so a future
+# `terraform-apply-bootstrap.yml` can have a stricter approval policy than
+# this one without entangling the two. See ADR-0004 and CONTEXT.md ("CI/CD").
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # Never cancel an in-flight apply: a half-applied state is worse than a
+  # queued second run.
+  group: terraform-apply-gcp
+  cancel-in-progress: false
+
+env:
+  TOFU_VERSION: "1.8.5"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Same fail-loud pattern as terraform-plan.yml. Adds GCP_APPLY_SA on
+      # top of the plan workflow's three required values, since the apply
+      # job below depends on it.
+      - name: Verify CI configuration
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          CI_SA: ${{ vars.GCP_CI_SA }}
+          APPLY_SA: ${{ vars.GCP_APPLY_SA }}
+          BILLING_ACCOUNT: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "${WIF_PROVIDER}" ]]    && missing+=("variable GCP_WIF_PROVIDER")
+          [[ -z "${CI_SA}" ]]           && missing+=("variable GCP_CI_SA")
+          [[ -z "${APPLY_SA}" ]]        && missing+=("variable GCP_APPLY_SA")
+          [[ -z "${BILLING_ACCOUNT}" ]] && missing+=("secret GCP_BILLING_ACCOUNT")
+
+          if (( ${#missing[@]} > 0 )); then
+            {
+              echo "::error::Terraform apply workflow is not wired up. Missing: ${missing[*]}"
+              echo
+              echo "Get the values:"
+              echo "  cd terraform/gcp"
+              echo "  tofu output -raw ci_workload_identity_provider     # GCP_WIF_PROVIDER"
+              echo "  tofu output -raw ci_service_account_email          # GCP_CI_SA"
+              echo "  tofu output -raw ci_apply_service_account_email    # GCP_APPLY_SA"
+              echo
+              echo "Then set them in GitHub: Settings → Secrets and variables → Actions"
+              echo "  Variables tab: GCP_WIF_PROVIDER, GCP_CI_SA, GCP_APPLY_SA"
+              echo "  Secrets tab:   GCP_BILLING_ACCOUNT"
+              echo
+              echo "See terraform/gcp/README.md, section \"CI: GitHub Actions auth\"."
+            } >&2
+            exit 1
+          fi
+
+      # Plan runs as the viewer-only SA. The apply job re-auths as the
+      # owner SA — separating the two means a token compromised mid-plan
+      # cannot apply.
+      - name: Authenticate to GCP via WIF (plan SA, viewer-only)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      - name: tofu init
+        working-directory: terraform/gcp
+        run: tofu init -input=false -lockfile=readonly
+
+      - name: tofu plan
+        id: plan
+        working-directory: terraform/gcp
+        env:
+          TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: |
+          set +e
+          tofu plan -input=false -no-color -detailed-exitcode -out=tfplan
+          rc=$?
+          set -e
+
+          # Detailed exit codes:
+          #   0 = no changes (apply job is skipped)
+          #   1 = error
+          #   2 = changes present (apply job runs after env approval)
+          if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+            echo "::error::tofu plan failed with exit code $rc"
+            exit $rc
+          fi
+
+          echo "exitcode=$rc" >> "$GITHUB_OUTPUT"
+          case "$rc" in
+            0) echo "No changes. Apply job will be skipped." ;;
+            2) echo "Changes detected. Apply job is gated on \`gcp\` environment approval." ;;
+          esac
+
+      # Hand the plan binary off to the apply job. Re-using the binary
+      # (rather than re-planning in apply) is the only way `apply tfplan`
+      # can guarantee it applies exactly what the operator approved; a
+      # second plan could legitimately diff against the first if state
+      # changed in between.
+      - name: Upload tfplan artifact
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-gcp
+          path: terraform/gcp/tfplan
+          if-no-files-found: error
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: needs.plan.outputs.exitcode == '2'
+    runs-on: ubuntu-latest
+    # The env gate fires here. GitHub holds this job in a "Waiting" state
+    # until a configured reviewer approves the deployment in the UI; the
+    # WIF binding on tf-ci-apply also keys on this exact environment name,
+    # so jobs that omit `environment: gcp` cannot mint an apply token even
+    # if they bypass the plan job.
+    environment: gcp
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Authenticate to GCP via WIF (apply SA, roles/owner)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_APPLY_SA }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      # Re-init to materialize providers under .terraform/ for this
+      # runner. Lockfile is read-only so providers must match what the
+      # plan job resolved.
+      - name: tofu init
+        working-directory: terraform/gcp
+        run: tofu init -input=false -lockfile=readonly
+
+      - name: Download tfplan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-gcp
+          path: terraform/gcp
+
+      - name: tofu apply
+        working-directory: terraform/gcp
+        env:
+          TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: tofu apply -input=false -no-color tfplan

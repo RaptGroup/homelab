@@ -98,3 +98,15 @@ variable "tf_ci_sa_id" {
   type        = string
   default     = "tf-ci-plan"
 }
+
+variable "tf_ci_apply_sa_id" {
+  description = "Service account ID (the part before @) for the apply CI service account used by the terraform-apply workflow. Holds roles/owner on the project; only impersonable from a workflow job that declares `environment: gcp` (env-scoped via the WIF binding)."
+  type        = string
+  default     = "tf-ci-apply"
+}
+
+variable "ci_apply_environment" {
+  description = "GitHub deployment environment name that gates impersonation of the apply SA. The WIF binding restricts impersonation to OIDC tokens whose `environment` claim equals this value, so only workflow jobs that declare `environment: <this>` can mint a token for tf-ci-apply. Convention: environment names mirror Terraform root names (gcp ↔ terraform/gcp/)."
+  type        = string
+  default     = "gcp"
+}
