@@ -17,6 +17,14 @@ kubernetes/apps/<name>/
 canonical pointer to the chart — both Argo and the lint pipeline read it
 from there.
 
+When `spec.source.repoURL` points back at this repo (path-based addons
+that ship raw manifests instead of a chart), use the SSH form
+`git@github.com:jvcorredor/homelab.git`. The repo is private; ArgoCD
+authenticates with the deploy key ESO syncs from GSM into a labelled
+`repository` Secret in the argocd namespace. URLs are matched verbatim,
+so an HTTPS form here will fail with `authentication required` even
+though the credential is in place.
+
 ## Linting
 
 Every PR that touches this directory runs `helm template` + `kubeconform`
