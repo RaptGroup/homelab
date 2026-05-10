@@ -3,6 +3,14 @@
 # manual DNS at (Path C, see CONTEXT.md). Sits in the .200–.230 pool
 # from terraform/bootstrap's CiliumLoadBalancerIPPool.
 #
+# externalTrafficPolicy is left at the default (Cluster). With
+# ETP=Local, Cilium's L2 leader election picked an announcer that
+# didn't host the AdGuard pod, so packets to .200 hit a node with no
+# local backend and were dropped (issue #41). ETP=Cluster lets any
+# worker forward via eBPF NAT to the pod's actual node, at the cost
+# of AdGuard seeing the worker's IP rather than the LAN client IP —
+# per-client features must rely on ClientIDs (DoH/DoT/PTR) instead.
+#
 # Selector targets the bjw-s/app-template Deployment via the
 # `app.kubernetes.io/name` label the chart sets to the controller key
 # (`adguard-home`).
@@ -16,7 +24,6 @@ metadata:
     lbipam.cilium.io/ips: "192.168.1.200"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
   # Same selector the chart's primary Service uses, so this LB targets
   # the same Deployment without the chart having to render two Services.
   selector:
