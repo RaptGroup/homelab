@@ -28,6 +28,13 @@ ArgoCD. Phase 1 addons are running today.
 - [`scripts/argocd-tracking-sweep.sh`](./scripts/argocd-tracking-sweep.sh) —
   flag any cluster resource still on Argo's legacy `instance` label without
   the modern `tracking-id` annotation (silent-prune-orphan candidates; see #68).
+- [`Makefile`](./Makefile) — `make smoke` runs post-bootstrap sanity checks
+  against the current kubeconfig (`cilium connectivity test` plus a Ready=True
+  assertion on the wildcard `Certificate`, the LE DNS-01 `ClusterIssuer`, and
+  the `gsm` `ClusterSecretStore`). Run after every `tofu apply` against
+  `terraform/bootstrap/`. Requires `cilium-cli` and `kubectl` on `PATH` and
+  the kubeconfig pointed at the homelab cluster; the assertions are
+  read-only.
 
 ## Documentation
 
