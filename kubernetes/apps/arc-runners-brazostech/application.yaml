@@ -1,0 +1,39 @@
+# ARC scale set targeting github.com/brazostech — the brazostech pool.
+#
+# Same shape as the personal pool. Same chart, same controller, distinct
+# GitHub App installation ID (the access boundary — explicitly NOT
+# installed on Scale Computing). See arc-runners-personal/application.yaml
+# for the source-layout rationale.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arc-runners-brazostech
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-brazostech
+  sources:
+    - repoURL: ghcr.io/actions/actions-runner-controller-charts
+      chart: gha-runner-scale-set
+      targetRevision: 0.14.1
+      helm:
+        valueFiles:
+          - $values/kubernetes/apps/arc-runners-brazostech/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/arc-runners-brazostech/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

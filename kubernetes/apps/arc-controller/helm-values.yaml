@@ -1,0 +1,17 @@
+# gha-runner-scale-set-controller values. Owns the AutoscalingRunnerSet
+# CRD and reconciles every scale set in the cluster.
+#
+# fullnameOverride is load-bearing: the scale-set chart's
+# `controllerServiceAccount.name` must point at *this* SA, and Helm's
+# default fullname template is `<release>-gha-rs-controller`. Argo's
+# release name defaults to the Application name, so without this override
+# the SA would be `arc-controller-gha-rs-controller` and a future rename
+# would break the cross-chart link silently. Pinning the name keeps both
+# scale sets' values files free of release-name coupling.
+fullnameOverride: arc-gha-rs-controller
+
+# Default chart logLevel is "debug"; that's noisy for steady state. The
+# controller is quiet enough that "info" still surfaces every reconcile of
+# interest. Bump back to "debug" temporarily when chasing an ARC-side issue.
+flags:
+  logLevel: info

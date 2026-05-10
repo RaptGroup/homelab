@@ -1,0 +1,22 @@
+# Placeholder Service that exists only to carry gethomepage.dev/*
+# annotations so the runner pool surfaces as a card on the cluster
+# dashboard. The gha-runner-scale-set chart doesn't ship a Service of
+# its own — the listener and ephemeral runner pods don't expose HTTP —
+# and Homepage's auto-discovery requires an annotated K8s object. Type
+# ExternalName lets us avoid endpoints/selectors entirely; the resolved
+# DNS name is irrelevant because nothing actually dials this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: arc-runners-personal-homepage-card
+  namespace: arc-runners-personal
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Runners — personal
+    gethomepage.dev/description: Self-hosted ARC pool for github.com/jvcorredor
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: github.png
+    gethomepage.dev/href: https://github.com/jvcorredor
+spec:
+  type: ExternalName
+  externalName: github.com

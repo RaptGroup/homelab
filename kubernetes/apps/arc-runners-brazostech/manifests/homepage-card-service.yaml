@@ -1,0 +1,19 @@
+# Placeholder Service carrying gethomepage.dev/* annotations so the
+# brazostech runner pool surfaces as a card on the cluster dashboard.
+# See arc-runners-personal/manifests/homepage-card-service.yaml for the
+# rationale (the chart doesn't ship a Service of its own).
+apiVersion: v1
+kind: Service
+metadata:
+  name: arc-runners-brazostech-homepage-card
+  namespace: arc-runners-brazostech
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Runners — brazostech
+    gethomepage.dev/description: Self-hosted ARC pool for github.com/brazostech
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: github.png
+    gethomepage.dev/href: https://github.com/brazostech
+spec:
+  type: ExternalName
+  externalName: github.com

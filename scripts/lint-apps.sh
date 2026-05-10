@@ -21,9 +21,16 @@ SCHEMA_LOCATIONS=(
   'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 )
 
-# ArgoCD CRDs aren't in scope for this lint; skip the application.yaml kinds
-# rather than pulling in another schema set.
-SKIP_KINDS="Application,AppProject"
+# Skip:
+#  - Application/AppProject — ArgoCD CRDs, out of scope for this lint.
+#  - AutoscalingRunnerSet — ARC's CR; actions.github.com isn't on the
+#    datreeio catalog and ARC ships no JSON schema upstream.
+#  - CustomResourceDefinition — kubeconform's default set deliberately
+#    excludes apiextensions.k8s.io. Charts that ship CRDs (the controller
+#    chart's --include-crds output is the trigger here) would otherwise
+#    fail with "could not find schema for CustomResourceDefinition" on
+#    every entry. CRDs ship from upstream charts and are trusted as-is.
+SKIP_KINDS="Application,AppProject,AutoscalingRunnerSet,CustomResourceDefinition"
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -64,7 +71,17 @@ lint_app() {
     # mktemp's bare name silently renders an empty validation. Force .yaml.
     local rendered
     rendered="$(mktemp).yaml"
-    local helm_args=(template "$app_name" "$chart" --repo "$repo" --include-crds)
+    local helm_args=(template "$app_name")
+    # OCI repos can't be passed via --repo (helm errors with "could not
+    # find protocol handler"). The Argo convention stores them with the
+    # bare hostname as repoURL — fold that back into an oci:// chart URL
+    # for the CLI. HTTP(S) repos take the classic --repo form.
+    if [[ "$repo" =~ ^https?:// ]]; then
+      helm_args+=("$chart" --repo "$repo")
+    else
+      helm_args+=("oci://${repo%/}/${chart}")
+    fi
+    helm_args+=(--include-crds)
     [[ -n "$version" ]] && helm_args+=(--version "$version")
     [[ -f "$values_file" ]] && helm_args+=(-f "$values_file")
     local rc=0

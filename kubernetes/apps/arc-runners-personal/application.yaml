@@ -1,0 +1,42 @@
+# ARC scale set targeting github.com/jvcorredor — the personal pool.
+#
+# Three sources because the chart and the raw extras (Namespace,
+# ExternalSecret carrying the GitHub App credentials, homepage card
+# Service) all have to land. The root app-of-apps watches
+# `**/application.yaml` only, so the manifests/ directory has to be
+# pulled in by this Application directly via a third path source rather
+# than relying on root pickup. The middle `ref: values` source exists
+# solely to satisfy the chart's `$values/...` reference.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arc-runners-personal
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-personal
+  sources:
+    - repoURL: ghcr.io/actions/actions-runner-controller-charts
+      chart: gha-runner-scale-set
+      targetRevision: 0.14.1
+      helm:
+        valueFiles:
+          - $values/kubernetes/apps/arc-runners-personal/helm-values.yaml
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:jvcorredor/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/arc-runners-personal/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

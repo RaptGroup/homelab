@@ -154,6 +154,15 @@ system-extension upgrade pass (`siderolabs/iscsi-tools`,
 Two scale sets, both backed by the same `Rockingham Homelab ARC` GitHub App
 with two installations. Workflows pick a pool through the `runs-on:` label.
 
+### `arc-systems`
+
+The namespace the ARC controller (`gha-runner-scale-set-controller` chart)
+lives in. The `AutoscalingRunnerSet` CRD it owns is cluster-scoped, but the
+controller pod, its SA, and its leader-election lease all live here. Each
+scale set gets its own per-pool namespace (`arc-runners-personal`,
+`arc-runners-brazostech`) so the runner pods, listener, and the ESO-synced
+GitHub App Secret are isolated per scope.
+
 ### `arc-runners-personal`
 
 Targets `https://github.com/jvcorredor`. Workflows opt in with

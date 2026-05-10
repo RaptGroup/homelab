@@ -1,0 +1,53 @@
+# gha-runner-scale-set values for the personal pool.
+# Targets jvcorredor's user account; backed by the same `Rockingham
+# Homelab ARC` GitHub App as the brazostech pool, but a distinct
+# installation. Workflows opt in with `runs-on: [self-hosted, personal]`.
+
+githubConfigUrl: https://github.com/jvcorredor
+
+# Variation C — the chart consumes a pre-existing K8s Secret rather than
+# baking credentials into values. ESO populates that Secret from GSM
+# (see manifests/external-secret.yaml). Rotation is a GSM update; no
+# chart change.
+githubConfigSecret: arc-runners-personal-github-config
+
+# The chart's helm-template-time controller discovery relies on a
+# `lookup`, which Argo's render can't satisfy. Pin the controller SA
+# explicitly — the controller chart's fullnameOverride keeps this name
+# stable across release renames.
+controllerServiceAccount:
+  namespace: arc-systems
+  name: arc-gha-rs-controller
+
+# `self-hosted` is registered automatically; the items here are appended.
+# The full GitHub-side label set is therefore
+#   {self-hosted, linux, personal, arc-runners-personal}
+# so workflows can target the pool with any of:
+#   runs-on: [self-hosted, personal]
+#   runs-on: [self-hosted, linux, personal]
+#   runs-on: arc-runners-personal
+scaleSetLabels:
+  - linux
+  - personal
+
+# Scale to zero when idle. Cap at 4 concurrent runners — anything more is
+# better served by paying for GitHub-hosted runners than by sizing the
+# homelab around bursty CI.
+minRunners: 0
+maxRunners: 4
+
+# No container mode — runners run jobs directly. DinD / Kubernetes
+# container mode is intentionally avoided; image builds in CI will move
+# to the planned buildkit VM rather than enabling privileged DinD inside
+# the cluster. Pods are ephemeral by default in scale-set mode.
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+            ephemeral-storage: 10Gi
