@@ -33,14 +33,31 @@ VM-based design that ran on Hypercore.
   by whichever control-plane node currently owns it.
 - **Control plane** — `cp-01` (`192.168.1.245`), `cp-02` (`.246`), `cp-03`
   (`.247`). All three carry the VIP membership.
-- **Workers** — `worker-01` (`192.168.1.241`), `worker-02` (`.242`).
+- **Workers** — `worker-01` (`192.168.1.241`), `worker-02` (`.242`),
+  `worker-03` (`.243`).
 - Per-node patches live under `talos/patches/nodes/<hostname>.yaml` and
   carry only the bits that differ between nodes: hostname, static address,
   install disk, and VIP membership for control planes.
 
+## Hardware
+
+Two tiers of Intel NUC. Control planes are the older, smaller boxes;
+workers are the newer ones with the headroom. Pulled live from
+`talosctl get systeminformation` / `cpu` / `ram` / `disks`.
+
+| Node | Model | CPU | Cores / Threads | RAM | NVMe |
+|---|---|---|---|---|---|
+| `cp-01` | Intel NUC8i3BEK | i3-8109U @ 3.0 GHz | 2 / 4 | 16 GB DDR4-2400 (2×8) | Samsung 970 EVO Plus 250 GB |
+| `cp-02` | Intel NUC8i3BEK | i3-8109U @ 3.0 GHz | 2 / 4 | 16 GB DDR4-2400 (2×8) | Samsung 970 EVO Plus 250 GB |
+| `cp-03` | Intel NUC8i3BEK | i3-8109U @ 3.0 GHz | 2 / 4 | 16 GB DDR4-2400 (2×8) | Samsung 970 EVO Plus 250 GB |
+| `worker-01` | Intel NUC10i7FNK | i7-10710U @ 1.1 GHz | 6 / 12 | 64 GB DDR4-3200 (2×32) | Samsung 970 EVO Plus 2 TB |
+| `worker-02` | Intel NUC10i7FNK | i7-10710U @ 1.1 GHz | 6 / 12 | 64 GB DDR4-2667 (2×32) | Samsung 970 EVO Plus 2 TB |
+| `worker-03` | Intel NUC10i7FNK | i7-10710U @ 1.1 GHz | 6 / 12 | 64 GB DDR4-2667 (2×32) | Samsung 970 EVO Plus 2 TB |
+
+Cluster totals: 24 cores / 48 threads, 240 GB RAM, ~6.75 TB NVMe.
+
 ## Status
 
-Rebuild in progress. Talos machine configs for five nodes are in place;
-the remaining node, the bootstrap and bring-up runbooks, and the
-Terraform layer are next. This page will grow as the cluster comes back
-online.
+Rebuild in progress. Talos machine configs for all six nodes are in
+place; the bootstrap and bring-up runbooks and the Terraform layer are
+next. This page will grow as the cluster comes back online.
