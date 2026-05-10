@@ -20,6 +20,13 @@ metadata:
     gethomepage.dev/group: Networking
     gethomepage.dev/icon: adguard-home.svg
     gethomepage.dev/href: https://adguard.lab.jackhall.dev
+    # Status-discovery override. Homepage's default is to look up a pod
+    # with `app.kubernetes.io/name=<HTTPRoute name>` in the HTTPRoute's
+    # namespace; the route is `adguard-home-ui` but the bjw-s
+    # app-template renders the Deployment as `adguard-home` (the
+    # `controllers` key in helm-values.yaml). Without this override the
+    # dashboard card shows NOT FOUND.
+    gethomepage.dev/app: adguard-home
     gethomepage.dev/widget.type: adguard
     gethomepage.dev/widget.url: http://adguard-home.adguard-home:80
     gethomepage.dev/widget.username: "{{HOMEPAGE_VAR_ADGUARD_USERNAME}}"
