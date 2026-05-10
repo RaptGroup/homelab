@@ -165,10 +165,11 @@ The workflow never runs `tofu apply` — apply stays operator-only on a
 workstation with ADC. See `.github/workflows/terraform-plan.yml` for
 the full workflow.
 
-Until `GCP_WIF_PROVIDER` and `GCP_CI_SA` are set, the workflow's `plan`
-job is skipped (not failed). `fmt` + change detection still gate every
-PR. The first PR after wire-up runs full validate + plan against both
-roots.
+Until those three values are set, the `plan` job fails loudly at its
+first step with an error message pointing here — chosen over a silent
+skip so a missing wire-up surfaces in the PR check rather than hiding.
+`fmt` and change detection do not depend on auth and still gate the
+PR independently.
 
 ## Outputs
 

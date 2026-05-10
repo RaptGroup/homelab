@@ -89,15 +89,8 @@ jobs:
         run: tofu fmt -check -recursive terraform/
 
   plan:
-    # Skipped until the operator has applied terraform/gcp/ once and set
-    # GCP_WIF_PROVIDER + GCP_CI_SA as Actions repository variables. Until
-    # then, fmt + detect still gate the PR; full plan kicks in on the next
-    # PR after wire-up.
     needs: [detect, fmt]
-    if: |
-      needs.detect.outputs.any_changed == 'true'
-      && vars.GCP_WIF_PROVIDER != ''
-      && vars.GCP_CI_SA != ''
+    if: needs.detect.outputs.any_changed == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -105,6 +98,40 @@ jobs:
         root: ${{ fromJSON(needs.detect.outputs.roots) }}
     steps:
       - uses: actions/checkout@v6
+
+      # Fail loud and early when CI hasn't been wired up yet. Without this
+      # the auth step below fails with a generic "specify exactly one of
+      # workload_identity_provider or credentials_json" error that doesn't
+      # point at the actual cause (missing repo variables).
+      - name: Verify CI configuration
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          CI_SA: ${{ vars.GCP_CI_SA }}
+          BILLING_ACCOUNT: ${{ secrets.GCP_BILLING_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "${WIF_PROVIDER}" ]]    && missing+=("variable GCP_WIF_PROVIDER")
+          [[ -z "${CI_SA}" ]]           && missing+=("variable GCP_CI_SA")
+          [[ -z "${BILLING_ACCOUNT}" ]] && missing+=("secret GCP_BILLING_ACCOUNT")
+
+          if (( ${#missing[@]} > 0 )); then
+            {
+              echo "::error::Terraform plan workflow is not wired up. Missing: ${missing[*]}"
+              echo
+              echo "Get the values:"
+              echo "  cd terraform/gcp"
+              echo "  tofu output -raw ci_workload_identity_provider   # GCP_WIF_PROVIDER"
+              echo "  tofu output -raw ci_service_account_email        # GCP_CI_SA"
+              echo
+              echo "Then set them in GitHub: Settings → Secrets and variables → Actions"
+              echo "  Variables tab: GCP_WIF_PROVIDER, GCP_CI_SA"
+              echo "  Secrets tab:   GCP_BILLING_ACCOUNT (same value as terraform.tfvars)"
+              echo
+              echo "See terraform/gcp/README.md, section \"CI: GitHub Actions auth\"."
+            } >&2
+            exit 1
+          fi
 
       - name: Authenticate to GCP via WIF
         uses: google-github-actions/auth@v2
