@@ -102,22 +102,18 @@ config-level diff is still useful for review.
 
 Authentication is OIDC-based — the workflow exchanges a GitHub-issued
 token for a GCP service-account impersonation via Workload Identity
-Federation. The pool, provider, and plan-only service account are
-provisioned by
-[`terraform/gcp/main.tf`](https://github.com/jvcorredor/homelab/blob/main/terraform/gcp/main.tf)
-and exposed via the `ci_workload_identity_provider` and
-`ci_service_account_email` outputs. The repository variables
-`GCP_WIF_PROVIDER` / `GCP_CI_SA` and the secret `GCP_BILLING_ACCOUNT`
-are set manually after the first `terraform/gcp/` apply; the
-workflow's `Verify CI configuration` step fails loud with the exact
-`tofu output` commands to run if any are missing.
+Federation. The pool, provider, and plan-only `tf-ci-plan` service
+account are documented in
+[Cloud / Workload Identity Federation](/homelab/cloud/gcp/#workload-identity-federation);
+the trust is locked to `RaptGroup/homelab` on the provider's
+`attribute_condition` and the SA is `roles/viewer` only, structurally
+incapable of applying.
 
-The trust boundary is repo-scoped: the provider's
-`attribute_condition` pins `assertion.repository ==
-jvcorredor/homelab`, so an OIDC token issued for any other repo is
-rejected before it ever reaches the service account. The service
-account itself is `roles/viewer` only — structurally incapable of
-applying changes. Apply remains an operator action.
+CI-side wire-up: the repository variables `GCP_WIF_PROVIDER` /
+`GCP_CI_SA` and the secret `GCP_BILLING_ACCOUNT` are set manually
+after the first `terraform/gcp/` apply. The workflow's `Verify CI
+configuration` step fails loud with the exact `tofu output` commands
+to run if any are missing.
 
 ## `deploy-docs`
 
@@ -176,6 +172,8 @@ listener pod → GitHub API → ephemeral runner pods
 
 App ID and private key are shared across both pools; the installation
 ID is per-org and is what scopes a pool to one set of repos. The
+[Cloud / Secret Manager](/homelab/cloud/gcp/#secret-manager) table
+lists each container by ID; the
 [External Secrets Operator](/homelab/platform/external-secrets/) page
 covers the GSM↔ESO bridge in general; the
 [ARC runners](/homelab/applications/arc/#one-app-two-installations)
@@ -247,6 +245,9 @@ Conventions to keep new workflows consistent with the existing three:
 
 - [`scripts/lint-apps.sh`](https://github.com/jvcorredor/homelab/blob/main/scripts/lint-apps.sh)
   — the script behind `apps-lint`.
+- [Cloud / Workload Identity Federation](/homelab/cloud/gcp/#workload-identity-federation)
+  — the WIF pool, provider trust scope, and plan-only `tf-ci-plan` SA
+  the `terraform-plan` workflow authenticates against.
 - [`terraform/gcp/README.md`](https://github.com/jvcorredor/homelab/blob/main/terraform/gcp/README.md#ci-github-actions-auth)
   — operator run book for the WIF pool, including how to extract the
   values for `GCP_WIF_PROVIDER` and `GCP_CI_SA`.

@@ -25,10 +25,12 @@ VM-based design that ran on Hypercore.
   for the apply and bootstrap commands.
 - `terraform/` — Two roots, split per
   [ADR-0001](/homelab/architecture/decisions/).
-  `terraform/gcp/` owns the cloud resources (Cloud DNS zone, Secret
-  Manager secrets, the IAM service account ESO uses, and the
-  [Workload Identity Federation pool](/homelab/automation/ci/#terraform-plan)
-  the `terraform-plan` CI workflow authenticates against).
+  `terraform/gcp/` owns the cloud resources (Cloud DNS zones, Secret
+  Manager containers, the IAM service accounts cert-manager and ESO
+  impersonate, the Workload Identity Federation pool GitHub Actions
+  authenticates through, the Terraform state bucket) — all in one
+  `rockingham-homelab` GCP project, documented under
+  [Cloud](/homelab/cloud/gcp/).
   `terraform/bootstrap/` brings a fresh Talos cluster from "kubeconfig
   works, nothing installed" to "ArgoCD reconciles `kubernetes/apps/`" —
   Gateway API CRDs, Cilium, cert-manager, External Secrets Operator,

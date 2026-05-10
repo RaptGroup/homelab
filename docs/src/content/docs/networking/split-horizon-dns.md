@@ -22,7 +22,10 @@ Two zones, two responsibilities.
 
 - The apex zone `jackhall.dev` is untouched at the registrar.
 - The `lab` subzone is NS-delegated from the registrar to a Cloud DNS zone
-  in the `rockingham-homelab` GCP project.
+  in the `rockingham-homelab` GCP project. The full layout of that
+  project — both zones, the SAs cert-manager and ESO impersonate, the
+  CAA record, the state bucket — is documented in
+  [Cloud / rockingham-homelab GCP project](/homelab/cloud/gcp/).
 - Cloud DNS holds **only** records needed for:
   1. ACME DNS-01 challenge records (`_acme-challenge.lab.jackhall.dev`),
      written by cert-manager via a GCP service account.
