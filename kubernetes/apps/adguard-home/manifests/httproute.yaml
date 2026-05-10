@@ -8,8 +8,15 @@ metadata:
   name: adguard-home-ui
   namespace: adguard-home
 spec:
+  # The Gateway API admission webhook defaults parentRef group/kind, the
+  # backendRef weight, and the implicit "PathPrefix /" match block when
+  # they're omitted. Argo with strict comparison flags those server-side
+  # additions as drift, so spell them out here verbatim — same pattern
+  # as kubernetes/apps/hubble-ui/manifests/httproute.yaml.
   parentRefs:
-    - name: adguard-home
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: adguard-home
       sectionName: https
   hostnames:
     - adguard.lab.jackhall.dev
@@ -19,5 +26,8 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: adguard-home
+        - group: ""
+          kind: Service
+          name: adguard-home
           port: 80
+          weight: 1
