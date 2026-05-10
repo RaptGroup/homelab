@@ -29,6 +29,61 @@ resource "helm_release" "argocd" {
   ]
 }
 
+# GitHub deploy-key credential ArgoCD uses to clone the homelab repo.
+# Container lives in terraform/gcp (`argocd-repo-ssh-key`); private key is
+# uploaded out of band via gcloud. ESO writes a K8s Secret carrying both
+# `sshPrivateKey` and the SSH-form `url` — Argo matches Applications to
+# this Secret by URL and uses the key automatically.
+resource "kubectl_manifest" "argocd_repo_credentials" {
+  yaml_body = yamlencode({
+    apiVersion = "external-secrets.io/v1beta1"
+    kind       = "ExternalSecret"
+    metadata = {
+      name      = "argocd-repo-homelab"
+      namespace = kubernetes_namespace.argocd.metadata[0].name
+    }
+    spec = {
+      refreshInterval = "1h"
+      secretStoreRef = {
+        kind = "ClusterSecretStore"
+        name = "gsm"
+      }
+      target = {
+        name           = "argocd-repo-homelab"
+        creationPolicy = "Owner"
+        template = {
+          metadata = {
+            labels = {
+              "argocd.argoproj.io/secret-type" = "repository"
+            }
+          }
+          data = {
+            type          = "git"
+            url           = var.argocd_repo_url
+            sshPrivateKey = "{{ .sshPrivateKey }}"
+          }
+        }
+      }
+      data = [
+        {
+          secretKey = "sshPrivateKey"
+          remoteRef = {
+            key = "argocd-repo-ssh-key"
+          }
+        },
+      ]
+    }
+  })
+
+  server_side_apply = true
+  force_conflicts   = true
+
+  depends_on = [
+    kubectl_manifest.cluster_secret_store_gsm,
+    helm_release.argocd,
+  ]
+}
+
 # Self-management Application — Argo manages itself from the same chart and
 # values file the bootstrap installed it from.
 resource "kubectl_manifest" "argocd_self_managed" {
@@ -42,7 +97,10 @@ resource "kubectl_manifest" "argocd_self_managed" {
   server_side_apply = true
   force_conflicts   = true
 
-  depends_on = [helm_release.argocd]
+  depends_on = [
+    helm_release.argocd,
+    kubectl_manifest.argocd_repo_credentials,
+  ]
 }
 
 # Root app-of-apps Application watching kubernetes/apps/. From this point on,
@@ -58,5 +116,8 @@ resource "kubectl_manifest" "argocd_root" {
   server_side_apply = true
   force_conflicts   = true
 
-  depends_on = [helm_release.argocd]
+  depends_on = [
+    helm_release.argocd,
+    kubectl_manifest.argocd_repo_credentials,
+  ]
 }

@@ -43,6 +43,11 @@ output "talos_cluster_secrets_id" {
   value       = google_secret_manager_secret.talos_cluster_secrets.secret_id
 }
 
+output "argocd_repo_ssh_key_id" {
+  description = "GSM secret ID holding the SSH private key for the GitHub deploy key ArgoCD uses to clone the homelab repo. Versions are uploaded out of band."
+  value       = google_secret_manager_secret.argocd_repo_ssh_key.secret_id
+}
+
 output "ci_workload_identity_provider" {
   description = "Full resource name of the GitHub OIDC Workload Identity Provider. Set this as the GCP_WIF_PROVIDER repository variable in GitHub Actions."
   value       = google_iam_workload_identity_pool_provider.github.name

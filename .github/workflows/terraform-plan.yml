@@ -153,6 +153,35 @@ jobs:
         working-directory: terraform/${{ matrix.root }}
         run: tofu validate -no-color
 
+      # The bootstrap root's k8s/helm/kubectl providers default to a local
+      # kubeconfig at talos/_out/kubeconfig that's never present in CI, and
+      # the cluster itself is LAN-only so refresh against the live cluster
+      # can't work. Stub the file so provider validation passes and skip
+      # refresh in the next step — plan against state is still useful for
+      # reviewing config-level diffs in PRs.
+      - name: Stub kubeconfig for bootstrap plan
+        if: matrix.root == 'bootstrap'
+        run: |
+          mkdir -p talos/_out
+          cat >talos/_out/kubeconfig <<'EOF'
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: ci-stub
+              cluster:
+                server: https://127.0.0.1:6443
+                insecure-skip-tls-verify: true
+          contexts:
+            - name: ci-stub
+              context:
+                cluster: ci-stub
+                user: ci-stub
+          users:
+            - name: ci-stub
+              user: {}
+          current-context: ci-stub
+          EOF
+
       - name: tofu plan
         id: plan
         working-directory: terraform/${{ matrix.root }}
@@ -163,8 +192,11 @@ jobs:
           TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
         run: |
           set +e
-          tofu plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan \
-            > plan.txt 2>&1
+          plan_args=(-input=false -no-color -lock=false -detailed-exitcode -out=tfplan)
+          if [[ "${{ matrix.root }}" == "bootstrap" ]]; then
+            plan_args+=(-refresh=false)
+          fi
+          tofu plan "${plan_args[@]}" > plan.txt 2>&1
           rc=$?
           set -e
 
