@@ -91,7 +91,7 @@ variable "argocd_chart_version" {
 }
 
 variable "local_path_version" {
-  description = "Tag (with leading v) of rancher/local-path-provisioner whose deploy/local-path-storage.yaml is applied. Must be >= v0.0.31 — that's when --helper-pod-namespace landed (rancher/local-path-provisioner#454) and local-path.tf relies on it."
+  description = "Tag (with leading v) of rancher/local-path-provisioner whose deploy/local-path-storage.yaml is applied."
   type        = string
   default     = "v0.0.32"
 }
