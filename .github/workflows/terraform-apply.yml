@@ -95,7 +95,14 @@ jobs:
           TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
         run: |
           set +e
-          tofu plan -input=false -no-color -detailed-exitcode -out=tfplan
+          # -lock=false because the plan SA (tf-ci-plan) only holds
+          # roles/viewer; it cannot write the .tflock object the GCS
+          # backend uses for state locking. Without this, plan retries
+          # lock acquisition until timeout. Same workaround as
+          # terraform-plan.yml. The apply job below keeps locking
+          # enabled (the apply SA has roles/owner and can write the
+          # lock object) so concurrent applies are still serialized.
+          tofu plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan
           rc=$?
           set -e
 
