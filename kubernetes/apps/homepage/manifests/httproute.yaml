@@ -5,6 +5,13 @@
 #
 # Attaches cross-namespace to the central `lab` Gateway in gateway-system
 # (issue #48); TLS terminates there with the wildcard cert.
+#
+# Carries a `kubernetes`-type widget so the card shows pod count alongside
+# CPU/memory (issue #111). AdGuard and ArgoCD can't get the same widget
+# because Homepage only supports one widget per card via K8s annotations
+# (resource-helpers.js parses a single `widget.<field>` namespace), and
+# those cards already carry their service-specific adguard / argocd
+# widgets.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -17,6 +24,9 @@ metadata:
     gethomepage.dev/group: Platform
     gethomepage.dev/icon: homepage.png
     gethomepage.dev/href: https://dashboard.lab.jackhall.dev
+    gethomepage.dev/widget.type: kubernetes
+    gethomepage.dev/widget.namespace: homepage
+    gethomepage.dev/widget.app: homepage
 spec:
   # Spell out the Gateway API admission-webhook defaults (parentRef
   # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
