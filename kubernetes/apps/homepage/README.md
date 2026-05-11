@@ -9,14 +9,18 @@ addons via `gethomepage.dev/*` annotations on their `HTTPRoute`s
 
 Homepage's K8s status lookup defaults to a pod with
 `app.kubernetes.io/name=<HTTPRoute name>` in the HTTPRoute's namespace.
-When an addon's backing Deployment differs from that — different name,
-different namespace, or both — the HTTPRoute must spell out the
-override or the card renders **NOT FOUND**:
+When an addon's backing Deployment has a different name in the *same*
+namespace, the HTTPRoute can spell out the override or the card
+renders **NOT FOUND**:
 
 | Annotation                  | Overrides                                       |
 |-----------------------------|-------------------------------------------------|
 | `gethomepage.dev/app`       | The `app.kubernetes.io/name` label selector     |
-| `gethomepage.dev/namespace` | The namespace Homepage searches for the pod     |
+
+Cross-namespace lookups are not expressible on HTTPRoutes. Homepage
+v1.2.0 honors `gethomepage.dev/namespace` on `Ingress` objects only;
+on HTTPRoutes the annotation is silently ignored, so the card renders
+as a plain link with no live status pill.
 
 Live examples in this repo:
 
@@ -26,14 +30,19 @@ Live examples in this repo:
   `gethomepage.dev/app: adguard-home`.
 - `kubernetes/apps/hubble-ui/manifests/httproute.yaml` — the Cilium
   chart installs the Hubble UI Deployment into `kube-system`, not the
-  `hubble-ui` namespace where this repo owns the routing layer, so the
-  route sets both `gethomepage.dev/app: hubble-ui` and
-  `gethomepage.dev/namespace: kube-system`.
+  `hubble-ui` namespace where this repo owns the routing layer. Since
+  Homepage can't be told to look in another namespace from an
+  HTTPRoute, no override is set; the Hubble card renders as a plain
+  link with no status pill.
 
 When adding a new addon: if the HTTPRoute's `metadata.name` matches the
 backing Deployment's `app.kubernetes.io/name` *and* both live in the
-same namespace, no override is needed. Otherwise add the annotations
-above. Reference: [Homepage K8s status discovery docs](https://gethomepage.dev/configs/kubernetes/#using-the-deployments-status).
+same namespace, no override is needed. If the names differ but the
+namespace matches, set `gethomepage.dev/app`. If the Deployment lives
+in a different namespace from the HTTPRoute, accept the
+plain-link/no-status-pill render rather than restructuring the repo to
+satisfy Homepage's HTTPRoute discovery limitations. Reference:
+[Homepage K8s status discovery docs](https://gethomepage.dev/configs/kubernetes/#using-the-deployments-status).
 
 ## Shape
 
