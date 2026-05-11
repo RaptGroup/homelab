@@ -103,10 +103,10 @@ config:
     cardBlur: sm
     headerStyle: boxed
     layout:
-      Cluster:
+      Networking:
         style: row
         columns: 4
-      Networking:
+      Observability:
         style: row
         columns: 4
       Platform:
