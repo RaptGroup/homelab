@@ -5,6 +5,32 @@ Cluster dashboard at `dashboard.lab.jackhall.dev`
 addons via `gethomepage.dev/*` annotations on their `HTTPRoute`s
 (PRD #4 / issue #14).
 
+## Routed vs. headless: where service entries live
+
+Two card-source paths exist, picked per-addon by whether it has an
+`HTTPRoute`:
+
+- **Routed addon** — the addon has an `HTTPRoute` for browser traffic.
+  Its card is configured via `gethomepage.dev/*` annotations on that
+  route, picked up by Homepage's `config.kubernetes.gateway: true`
+  discovery loop. The addon owns its card, in its own directory; this
+  helm-values file stays out of the way.
+
+- **Headless addon** — no `HTTPRoute`, because the addon serves no
+  HTTP at all (ARC runners, ARC controller). Homepage cannot
+  auto-discover these — its discovery loop only scans `HTTPRoute`,
+  `Ingress`, and Traefik `IngressRoute` objects, not arbitrary
+  `Service`s. The card is therefore declared longhand under
+  `services:` in `helm-values.yaml` here. Cluster signals (pod count,
+  status pill) ride on `namespace` + `podSelector` fields against the
+  addon's own namespace.
+
+The CI group's two cards (`RaptGroup runners`, `Brazostech runners`)
+are the live examples of the headless path. Don't add routed addons
+to `helm-values.yaml` just because it's easier — duplicating the
+annotation pattern there breaks the "one source of truth per card"
+property that makes the dashboard reviewable.
+
 ## Status-discovery overrides
 
 Homepage's K8s status lookup defaults to a pod with

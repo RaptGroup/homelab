@@ -5,8 +5,8 @@
 # so the org is the necessary unit of grouping.
 #
 # Three sources because the chart and the raw extras (Namespace,
-# ExternalSecret carrying the GitHub App credentials, homepage card
-# Service) all have to land. The root app-of-apps watches
+# ExternalSecret carrying the GitHub App credentials) all have to
+# land. The root app-of-apps watches
 # `**/application.yaml` only, so the manifests/ directory has to be
 # pulled in by this Application directly via a third path source rather
 # than relying on root pickup. The middle `ref: values` source exists

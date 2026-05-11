@@ -1,7 +1,9 @@
-# Homepage chart values. Dashboard settings ONLY — service entries are
-# never listed here. Each addon advertises itself via gethomepage.dev/*
-# annotations on its HTTPRoute (the Homepage chart's default ClusterRole
-# already grants list/get on httproutes + gateways cluster-wide).
+# Homepage chart values. Routed addons (those with an HTTPRoute) advertise
+# themselves via gethomepage.dev/* annotations on that HTTPRoute — the
+# Homepage chart's default ClusterRole already grants list/get on
+# httproutes + gateways cluster-wide. Headless addons (no HTTPRoute) can't
+# ride that path and are listed longhand under `services:` below — see
+# README.md for the routed/headless convention split.
 #
 # To wire credentials for live-status widgets without putting secrets in
 # Git: ExternalSecret resources under manifests/ sync the AdGuard admin
@@ -66,10 +68,30 @@ config:
     traefik: false
     gateway: true
 
-  # Empty list — every service card on the dashboard comes from
-  # gethomepage.dev/* annotations on each addon's HTTPRoute. Maintaining a
-  # parallel list here would defeat the auto-discovery convention (PRD US 14).
-  services: []
+  # Routed addons are picked up via HTTPRoute annotations (PRD US 14) —
+  # do not duplicate those here. This list is reserved for headless
+  # addons that have no HTTPRoute to attach annotations to.
+  services:
+    - CI:
+        - RaptGroup runners:
+            icon: github.png
+            description: Self-hosted ARC pool for github.com/RaptGroup
+            href: https://github.com/organizations/RaptGroup/settings/actions/runners
+            # ARC runs one ephemeral pod per job in the pool's namespace
+            # (the listener lives in arc-systems, not here). Empty
+            # pod-selector matches every pod in this namespace, so the
+            # status pill counts active runners directly with no GitHub
+            # PAT. Scale-to-zero means the namespace is normally empty;
+            # Homepage's status endpoint returns 404 in that case, which
+            # doubles as the idle-pool signal.
+            namespace: arc-runners-raptgroup
+            podSelector: ""
+        - Brazostech runners:
+            icon: github.png
+            description: Self-hosted ARC pool for github.com/brazostech
+            href: https://github.com/organizations/brazostech/settings/actions/runners
+            namespace: arc-runners-brazostech
+            podSelector: ""
 
   bookmarks: []
 
@@ -110,5 +132,8 @@ config:
         style: row
         columns: 4
       Platform:
+        style: row
+        columns: 4
+      CI:
         style: row
         columns: 4
