@@ -210,6 +210,18 @@ plan job produced, so what gets applied is what the reviewer
 approved — not a re-derived second plan that could legitimately
 diverge if state changed in between.
 
+The workflow runs on two triggers: manual `workflow_dispatch`, and
+`push` to `main` filtered to paths under `terraform/gcp/**` or the
+workflow file itself. Merging a PR that doesn't touch those paths
+does not trigger an apply. A top-level `concurrency` group
+(`terraform-apply-gcp`, `cancel-in-progress: false`) serializes runs
+so two rapid merges queue rather than cancel — cancelling an
+in-flight `tofu apply` would leave a held state lock and possibly
+half-modified resources. Auto-triggered runs go through the same
+`gcp` environment gate as manual dispatches; the trigger only
+controls when the workflow starts, not whether the apply step
+requires approval.
+
 ### Bootstrap: enabling CI apply on a fresh project
 
 The `tf-ci-apply` SA has to exist before any workflow can impersonate

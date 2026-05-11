@@ -1,8 +1,5 @@
 name: Terraform apply (gcp)
 
-# Slice 1: workflow_dispatch only. Slice 2 will layer push:main auto-trigger
-# on top once we have a sense of how often this runs in practice.
-#
 # This workflow is per-root: there is one terraform-apply-*.yml per Terraform
 # root, keyed to a GitHub deployment environment of the same name (gcp ↔
 # terraform/gcp/). Each environment has its own approver list, so a future
@@ -11,6 +8,16 @@ name: Terraform apply (gcp)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    # Path filter intentionally narrow: only TF root changes or edits to
+    # this workflow itself trigger an auto-apply. Touching unrelated paths
+    # (kubernetes/, docs/, other workflows) does not run a plan. The env
+    # gate still holds the apply step for operator approval if the plan
+    # shows a diff; a no-diff plan skips apply silently.
+    paths:
+      - 'terraform/gcp/**'
+      - '.github/workflows/terraform-apply.yml'
 
 permissions:
   contents: read
