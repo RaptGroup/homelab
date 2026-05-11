@@ -71,7 +71,24 @@ config:
   # parallel list here would defeat the auto-discovery convention (PRD US 14).
   services: []
 
-  bookmarks: []
+  bookmarks:
+    - Cloud:
+        - GCP project:
+            - abbr: GC
+              href: https://console.cloud.google.com/home/dashboard?project=rockingham-homelab
+        - Cloud DNS:
+            - abbr: DN
+              href: https://console.cloud.google.com/net-services/dns/zones?project=rockingham-homelab
+        - Secret Manager:
+            - abbr: SM
+              href: https://console.cloud.google.com/security/secret-manager?project=rockingham-homelab
+    - Code:
+        - homelab:
+            - abbr: HL
+              href: https://github.com/RaptGroup/homelab
+        - Actions:
+            - abbr: CI
+              href: https://github.com/RaptGroup/homelab/actions
 
   # Dashboard-level widgets only (cluster summary + search). Per-service
   # widgets like adguard / argocd attach via HTTPRoute annotations on
