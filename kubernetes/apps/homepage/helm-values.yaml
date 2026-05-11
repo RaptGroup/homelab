@@ -31,6 +31,9 @@ service:
       gethomepage.dev/group: Platform
       gethomepage.dev/icon: homepage.png
       gethomepage.dev/href: https://dashboard.lab.jackhall.dev
+      gethomepage.dev/widget.type: kubernetes
+      gethomepage.dev/widget.namespace: homepage
+      gethomepage.dev/widget.app: homepage
 
 # Default chart ClusterRole already covers ingresses, httproutes, gateways,
 # namespaces, pods, nodes, and metrics. Acceptance criterion calls out
