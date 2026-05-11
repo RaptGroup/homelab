@@ -41,3 +41,17 @@ spec:
       - ServerSideApply=true
       - CreateNamespace=true
       - ApplyOutOfSyncOnly=true
+  # The jameswynn/homepage chart sets a `values-checksum` annotation on
+  # the Deployment (and its pod template) computed from `print .Values |
+  # sha256sum`. Under ArgoCD's render pipeline the hash drifts between
+  # reconciles even when helm-values.yaml is unchanged, so every sync
+  # patches the annotation and forces a new ReplicaSet — observed as
+  # ~3min pod cycling (issue #112). Ignoring this single jsonPointer
+  # stops the churn; real values changes still propagate via every other
+  # field of the template.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /metadata/annotations/values-checksum
+        - /spec/template/metadata/annotations/values-checksum
