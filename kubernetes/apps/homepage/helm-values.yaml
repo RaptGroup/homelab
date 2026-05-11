@@ -99,7 +99,6 @@ config:
     title: Rockingham Homelab
     background:
       image: https://images.unsplash.com/photo-1563863251222-11d3e3bd3b62?auto=format&fit=crop&w=2560&h=1440&q=80
-      blur: sm
       opacity: 60
     cardBlur: sm
     headerStyle: boxed
