@@ -17,14 +17,18 @@ metadata:
     gethomepage.dev/icon: cilium.png
     gethomepage.dev/description: Cilium network flow visualizer
     gethomepage.dev/href: https://hubble.lab.jackhall.dev
-    # No status-discovery override. The Hubble UI Deployment ships with
-    # Cilium in kube-system, not in the hubble-ui namespace where this
-    # repo owns the routing layer. Homepage v1.2.0 silently ignores
-    # `gethomepage.dev/namespace` on HTTPRoutes (the annotation is only
-    # honored on Ingress objects), so the cross-namespace pod lookup
-    # cannot be expressed here. Card renders as a plain link without a
-    # live status pill — accepted in lieu of restructuring the repo to
-    # satisfy Homepage's HTTPRoute discovery limitations.
+    # The Hubble UI Deployment ships with Cilium in kube-system, not in
+    # the hubble-ui namespace where this repo owns the routing layer.
+    # Homepage v1.2.0 silently ignores `gethomepage.dev/namespace` on
+    # HTTPRoutes (only honored on Ingress), so the cross-namespace pod
+    # lookup can't be expressed here, and Homepage's *default* lookup
+    # (route name + route namespace) hits the same dead end and emits
+    # `no pods found with namespace=hubble-ui` on every dashboard load.
+    # `external: "true"` short-circuits the Kubernetes status component
+    # (item.jsx renders the status pill only when `service.app && !service.external`),
+    # leaving a plain link with no status pill — accepted in lieu of
+    # restructuring the repo to satisfy Homepage's HTTPRoute limitations.
+    gethomepage.dev/external: "true"
 spec:
   # The Gateway API admission webhook defaults parentRef group/kind, the
   # backendRef weight, and the implicit "PathPrefix /" match block when

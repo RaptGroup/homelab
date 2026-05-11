@@ -9,18 +9,23 @@ addons via `gethomepage.dev/*` annotations on their `HTTPRoute`s
 
 Homepage's K8s status lookup defaults to a pod with
 `app.kubernetes.io/name=<HTTPRoute name>` in the HTTPRoute's namespace.
-When an addon's backing Deployment has a different name in the *same*
-namespace, the HTTPRoute can spell out the override or the card
-renders **NOT FOUND**:
+When the default doesn't match a real pod the card renders **NOT
+FOUND** *and* the Homepage Deployment logs `<kubernetesStatusService>
+no pods found …` on every dashboard load. Two escape hatches:
 
-| Annotation                  | Overrides                                       |
-|-----------------------------|-------------------------------------------------|
-| `gethomepage.dev/app`       | The `app.kubernetes.io/name` label selector     |
+| Annotation                  | Effect                                                      |
+|-----------------------------|-------------------------------------------------------------|
+| `gethomepage.dev/app`       | Overrides the `app.kubernetes.io/name` label selector       |
+| `gethomepage.dev/external`  | `"true"` skips the K8s status lookup entirely (plain link)  |
 
 Cross-namespace lookups are not expressible on HTTPRoutes. Homepage
 v1.2.0 honors `gethomepage.dev/namespace` on `Ingress` objects only;
-on HTTPRoutes the annotation is silently ignored, so the card renders
-as a plain link with no live status pill.
+on HTTPRoutes the annotation is silently ignored. When the backing
+Deployment lives in a different namespace from the HTTPRoute, set
+`gethomepage.dev/external: "true"` instead — the Homepage UI renders
+the K8s status pill only when `service.app && !service.external`
+(`src/components/services/item.jsx`), so `external` short-circuits
+both the pill render and the underlying pod lookup.
 
 Live examples in this repo:
 
@@ -32,16 +37,17 @@ Live examples in this repo:
   chart installs the Hubble UI Deployment into `kube-system`, not the
   `hubble-ui` namespace where this repo owns the routing layer. Since
   Homepage can't be told to look in another namespace from an
-  HTTPRoute, no override is set; the Hubble card renders as a plain
-  link with no status pill.
+  HTTPRoute, the route sets `gethomepage.dev/external: "true"`; the
+  Hubble card renders as a plain link with no status pill and the
+  Homepage Deployment stops emitting pod-lookup errors for it.
 
 When adding a new addon: if the HTTPRoute's `metadata.name` matches the
 backing Deployment's `app.kubernetes.io/name` *and* both live in the
 same namespace, no override is needed. If the names differ but the
 namespace matches, set `gethomepage.dev/app`. If the Deployment lives
-in a different namespace from the HTTPRoute, accept the
-plain-link/no-status-pill render rather than restructuring the repo to
-satisfy Homepage's HTTPRoute discovery limitations. Reference:
+in a different namespace from the HTTPRoute, set
+`gethomepage.dev/external: "true"` rather than restructuring the repo
+to satisfy Homepage's HTTPRoute discovery limitations. Reference:
 [Homepage K8s status discovery docs](https://gethomepage.dev/configs/kubernetes/#using-the-deployments-status).
 
 ## Shape
