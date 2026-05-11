@@ -24,8 +24,7 @@ kubernetes/apps/arc-runners-raptgroup/
 ├── helm-values.yaml                      # gha-runner-scale-set values for this pool
 └── manifests/
     ├── namespace.yaml                    # arc-runners-raptgroup Namespace
-    ├── external-secret.yaml              # GitHub App credentials synced from GSM
-    └── homepage-card-service.yaml        # ExternalName Service carrying gethomepage.dev/* annotations
+    └── external-secret.yaml              # GitHub App credentials synced from GSM
 ```
 
 Three Application sources — chart, repo (for the values reference), and
@@ -119,12 +118,19 @@ privileged DinD inside the cluster.
 
 ## Homepage card
 
-The chart doesn't ship a Service of its own (the listener and runner
-pods don't expose HTTP), so the dashboard card is driven by an
-`ExternalName` Service whose only job is to carry the
-`gethomepage.dev/*` annotations. The `externalName` value is irrelevant
-because nothing dials the Service — the card href points at
-`https://github.com/RaptGroup` directly.
+The pool surfaces as a card in the dashboard's `CI` group, declared
+longhand in `kubernetes/apps/homepage/helm-values.yaml` rather than via
+a `gethomepage.dev/*` annotation here. ARC is headless — no
+`HTTPRoute`, no HTTP endpoint — so Homepage's auto-discovery loop has
+nothing to scan. See the homepage README's "Routed vs. headless"
+section for the convention.
+
+The card's status pill counts pods in this namespace. The listener
+Deployment lives in `arc-systems`, so `arc-runners-raptgroup` only
+contains ephemeral runner pods — exactly the "active runners" signal
+the dashboard wants, free, with no GitHub PAT / GSM / ESO involvement.
+The card `href` deep-links to the RaptGroup org's runner-settings page
+on github.com.
 
 ## Verifying after first sync
 

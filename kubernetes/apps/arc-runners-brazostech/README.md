@@ -23,8 +23,7 @@ kubernetes/apps/arc-runners-brazostech/
 ├── helm-values.yaml                      # gha-runner-scale-set values for this pool
 └── manifests/
     ├── namespace.yaml                    # arc-runners-brazostech Namespace
-    ├── external-secret.yaml              # GitHub App credentials synced from GSM
-    └── homepage-card-service.yaml        # ExternalName Service carrying gethomepage.dev/* annotations
+    └── external-secret.yaml              # GitHub App credentials synced from GSM
 ```
 
 See `kubernetes/apps/arc-runners-raptgroup/README.md` for the
@@ -89,10 +88,12 @@ Identical to the RaptGroup pool: `minRunners: 0`, `maxRunners: 4`,
 
 ## Homepage card
 
-`homepage-card-service.yaml` is the same `ExternalName`-Service trick
-as the RaptGroup pool, with `href` pointing at
-`https://github.com/brazostech` and the `gethomepage.dev/name` set to
-`Runners — brazostech`.
+Same shape as the RaptGroup pool's card: declared longhand in the
+`CI` group of `kubernetes/apps/homepage/helm-values.yaml`, with `href`
+pointing at the brazostech org's runner-settings page and the status
+pill counting pods in `arc-runners-brazostech`. See
+`kubernetes/apps/arc-runners-raptgroup/README.md` and the homepage
+README's "Routed vs. headless" section for the rationale.
 
 ## Verifying after first sync
 
