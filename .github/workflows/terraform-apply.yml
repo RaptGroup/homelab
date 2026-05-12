@@ -38,7 +38,7 @@ jobs:
     outputs:
       exitcode: ${{ steps.plan.outputs.exitcode }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # Same fail-loud pattern as terraform-plan.yml. Adds GCP_APPLY_SA on
       # top of the plan workflow's three required values, since the apply
@@ -80,13 +80,13 @@ jobs:
       # owner SA — separating the two means a token compromised mid-plan
       # cannot apply.
       - name: Authenticate to GCP via WIF (plan SA, viewer-only)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_CI_SA }}
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@fc711fa910b93cba0f3fbecaafc9f42fd0c411cb # v2.0.0
         with:
           tofu_version: ${{ env.TOFU_VERSION }}
           tofu_wrapper: false
@@ -135,7 +135,7 @@ jobs:
       # changed in between.
       - name: Upload tfplan artifact
         if: steps.plan.outputs.exitcode == '2'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tfplan-gcp
           path: terraform/gcp/tfplan
@@ -153,16 +153,16 @@ jobs:
     # if they bypass the plan job.
     environment: gcp
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Authenticate to GCP via WIF (apply SA, roles/owner)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_APPLY_SA }}
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@fc711fa910b93cba0f3fbecaafc9f42fd0c411cb # v2.0.0
         with:
           tofu_version: ${{ env.TOFU_VERSION }}
           tofu_wrapper: false
@@ -175,7 +175,7 @@ jobs:
         run: tofu init -input=false -lockfile=readonly
 
       - name: Download tfplan artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tfplan-gcp
           path: terraform/gcp
