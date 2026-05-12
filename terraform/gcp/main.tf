@@ -100,6 +100,38 @@ resource "google_dns_record_set" "apex_lab_delegation" {
   rrdatas = google_dns_managed_zone.lab.name_servers
 }
 
+# NS delegation for the projects.jackhall.dev subzone to Cloudflare (ADR-0006).
+# Unlike the lab subzone — Cloud DNS on both sides of the delegation, so the
+# nameservers are knowable at plan time from another resource in this root —
+# the projects nameservers are Cloudflare-assigned and only knowable after
+# `terraform/cloudflare/` has created the zone. The two-root bootstrap
+# sequence is:
+#
+#   1. apply terraform/gcp/ with projects_zone_nameservers=[]
+#      (creates the cloudflare-api-token GSM container so the operator
+#      can upload the API token used by the cloudflare provider).
+#   2. operator uploads the CF API token to GSM.
+#   3. apply terraform/cloudflare/ (creates zone, tunnel, CAA, CNAME;
+#      outputs the four Cloudflare-assigned NS records).
+#   4. operator pastes those NS records into terraform/gcp/terraform.tfvars
+#      and re-applies this root to publish the delegation.
+#
+# Until step 4, public resolvers fall through the apex looking for
+# `projects.jackhall.dev` and get NXDOMAIN — which is exactly what we want
+# (no half-delegated state with a CNAME that resolves but a parent zone
+# that doesn't know about the subzone).
+resource "google_dns_record_set" "apex_projects_delegation" {
+  count = length(var.projects_zone_nameservers) > 0 ? 1 : 0
+
+  project      = google_project.lab.project_id
+  managed_zone = google_dns_managed_zone.apex.name
+  name         = "${var.projects_dns_name}."
+  type         = "NS"
+  ttl          = 21600
+
+  rrdatas = var.projects_zone_nameservers
+}
+
 # Public managed zone delegated from the apex via the NS record above.
 # cert-manager creates ACME TXT records here.
 resource "google_dns_managed_zone" "lab" {
@@ -728,6 +760,70 @@ resource "google_secret_manager_secret" "cluster_pull_sa_key" {
     purpose  = "addon-credential"
     addon    = "ar-canary"
     rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+# --- Cloudflare Tunnel: public preview env path (ADR-0006) -----------------
+#
+# Two GSM containers back the `terraform/cloudflare/` root and the
+# in-cluster `cloudflared` addon. The shape mirrors every other addon
+# secret in this root: container TF-managed here, value uploaded out of
+# band — so the long-lived plaintext credential never round-trips
+# through TF state.
+#
+# cloudflare-api-token: the operator-minted Cloudflare API token used by
+# `terraform/cloudflare/` to authenticate. Scoped to Zone:Edit +
+# Tunnel:Edit + DNS:Edit on the projects zone only — wide enough for
+# the root to manage the tunnel, the wildcard CNAME, and the CAA
+# records, narrow enough that a leak doesn't reach the operator's
+# other zones. Bootstrap step: see `terraform/cloudflare/README.md`.
+#
+# Upload (one-time bootstrap):
+#
+#   echo -n '<cf-api-token>' \
+#     | gcloud secrets versions add cloudflare-api-token \
+#         --project rockingham-homelab --data-file=-
+#
+# cloudflare-tunnel-token: the per-tunnel connector token cloudflared
+# uses to authenticate to Cloudflare's edge. Unlike every other GSM
+# container in this root, this one's value is written *by Terraform*
+# (`terraform/cloudflare/` reads the token from the
+# cloudflare_zero_trust_tunnel_cloudflared_token data source and posts
+# it as a new secret version). The container is created here so the
+# cloudflared addon's ExternalSecret has a stable name to reference,
+# and so the `terraform/cloudflare/` root doesn't have to assume
+# create-permissions on the GSM API surface beyond writing versions.
+resource "google_secret_manager_secret" "cloudflare_api_token" {
+  project   = google_project.lab.project_id
+  secret_id = "cloudflare-api-token"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "cloudflared"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret" "cloudflare_tunnel_token" {
+  project   = google_project.lab.project_id
+  secret_id = "cloudflare-tunnel-token"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "cloudflared"
+    rotation = "terraform"
   }
 
   replication {

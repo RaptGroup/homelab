@@ -122,17 +122,56 @@ The remaining `.202`–`.230` are first-come-first-served for any future
 The second cluster Gateway, alongside `lab`. Lives in `gateway-system`,
 serves `*.projects.jackhall.dev` over **HTTP on port 80** (TLS
 terminates at Cloudflare's edge; the in-cluster hop is cleartext inside
-the `cloudflared` tunnel). Exposed only via a **ClusterIP** Service —
-**not** a `LoadBalancer`, so it does not consume an LB-pool address and
-is not reachable from the LAN. `cloudflared` targets it by ClusterIP.
+the `cloudflared` tunnel). Lives in
+[`kubernetes/apps/projects-gateway/`](./kubernetes/apps/projects-gateway);
+`cloudflared` reaches it via the auto-generated Service
+`cilium-gateway-projects` in `gateway-system`.
+
+ADR-0006 calls for a ClusterIP-only Service so the Gateway never
+appears on the LB pool. **Cilium 1.16 (the cluster's current version)
+cannot deliver that property** — its Gateway controller always
+generates `type: LoadBalancer` for a Gateway resource, and
+`CiliumGatewayClassConfig` (parametrized GatewayClass, 1.18+) only
+supports `LoadBalancer` / `NodePort` for the generated Service. The
+manifest therefore omits `lbipam.cilium.io/ips` per the issue's "no
+LB pool IP annotation" instruction; Cilium assigns whatever's free
+from `lab-pool` and the existing `lab-l2-workers` policy ARP-announces
+it on workers. A LAN client that knows the IP and crafts a `Host:`
+header can technically reach a preview workload — the public-DNS
+path via Cloudflare is the intended route, and there's no AdGuard
+rewrite for `*.projects.jackhall.dev`. Restoring the structural-
+impossibility property is a follow-up (Cilium 1.18+ upgrade, or a
+labelled L2-announcement opt-out).
 
 `allowedRoutes.namespaces.from: Selector` with a namespaceSelector
 requiring the label `projects.jackhall.dev/enabled=true`. Only
 namespaces created by the preview-env wrapper carry the label, so the
 Gateway will refuse to attach an HTTPRoute from any other namespace —
 the gate is structural, not by convention.
+[`scripts/lint-apps.sh`](./scripts/lint-apps.sh)'s LB-pin check treats
+`from: Selector` as the marker for "this Gateway isn't on the LB pool
+by design" and skips the pin requirement on it.
 
 See ADR-0006.
+
+### `cloudflared`
+
+The outbound Cloudflare Tunnel connector that fronts the `projects`
+Gateway. One `Deployment` in the `cloudflared` namespace
+([`kubernetes/apps/cloudflared/`](./kubernetes/apps/cloudflared))
+running the `cloudflare/cloudflared` container with the per-tunnel
+connector token sourced via ESO from the GSM container
+`cloudflare-tunnel-token`. The tunnel's ingress rules are
+remote-managed (`config_src = "cloudflare"`), so the pod itself takes
+only the token — the forward target is set at the CF side by
+[`terraform/cloudflare/`](./terraform/cloudflare). Single replica;
+`maxUnavailable: 0` keeps the connector alive across image bumps.
+
+Deployed as raw manifests, not the upstream `cloudflare-tunnel-remote`
+Helm chart: that chart bakes the token into values with no
+"use an existing Secret" knob, which would put a long-lived
+credential in git. Raw manifests keep the secret on the GSM → ESO
+path that every other credential in this repo uses.
 
 ### Static cluster range (`192.168.1.240`–`192.168.1.247`)
 

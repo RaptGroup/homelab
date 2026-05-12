@@ -51,6 +51,17 @@ require yq
 # silently grab a pinned IP another addon depends on (see #28/#38, the
 # incidents this guard prevents). Presence-only — value format and pool
 # membership are Cilium's concern.
+#
+# Carve-out: Gateways whose listeners are gated by a namespaceSelector
+# (`allowedRoutes.namespaces.from == "Selector"`) are by-construction not
+# LAN-routable surfaces — they exist to receive traffic from a known set
+# of namespaces, not to be advertised at a pinned LAN IP. The first such
+# Gateway is `projects` (ADR-0006), which intentionally takes whatever
+# free address Cilium assigns (or, on a future Cilium 1.18+ upgrade, no
+# LB IP at all). Pinning the IP would put a preview-env surface on the
+# LB pool's LAN-visible range, contradicting ADR-0006's "no LAN
+# exposure" intent. The selector form is the structural marker; the
+# script trusts it instead of needing a separate opt-out annotation.
 check_lb_pins() {
   local app_name="$1"
   shift
@@ -63,7 +74,11 @@ check_lb_pins() {
     local missing
     missing="$(yq eval-all '
       select(
-        (.kind == "Gateway")
+        (
+          .kind == "Gateway"
+          and
+          ([.spec.listeners[]?.allowedRoutes.namespaces.from] | all_c(. == "Selector") | not)
+        )
         or
         (.kind == "Service" and .spec.type == "LoadBalancer")
       )
