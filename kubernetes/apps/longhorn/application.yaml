@@ -1,0 +1,52 @@
+# Longhorn — named, non-default StorageClass for singleton stateful
+# workloads that must survive node drain (Forgejo, singleton Postgres,
+# etc.). `local-path` remains the cluster default; PVCs opt in to
+# Longhorn with `storageClassName: longhorn`. See ADR-0005.
+#
+# Multi-source layout (mirrors kubernetes/apps/adguard-home/):
+#   - Source 1: longhorn chart from charts.longhorn.io.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives in
+#     Git alongside the Application.
+#   - Source 3: the manifests/ directory in this repo, holding the
+#     longhorn-system Namespace (with the privileged PSA label) and the
+#     HTTPRoute for the UI. Argo applies these directly without templating.
+#
+# Sync wave -10 lands Longhorn before any addon that mounts a `longhorn`
+# PVC — the chart registers the StorageClass and stands the CSI plugin
+# up before downstream Applications (default wave 0) start binding PVCs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.10.2
+      helm:
+        releaseName: longhorn
+        valueFiles:
+          - $values/kubernetes/apps/longhorn/helm-values.yaml
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/longhorn/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

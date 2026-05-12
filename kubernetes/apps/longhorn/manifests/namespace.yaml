@@ -1,0 +1,18 @@
+# longhorn-system needs Pod Security Admission set to `privileged` —
+# the iSCSI sidecars and longhorn-manager mount hostPath, run with
+# privileged: true, and bind host devices. Same rationale as
+# local-path-storage (terraform/bootstrap installs that namespace with
+# the same enforce=privileged label); both Phase 1 and Phase 2 storage
+# layers sit outside the restricted-by-default PSA posture.
+#
+# Labels are also set at `warn` and `audit` so a future
+# cluster-wide tightening surfaces this namespace explicitly in audit
+# logs rather than silently downgrading the enforcement.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: longhorn-system
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/audit: privileged

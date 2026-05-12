@@ -1,0 +1,64 @@
+# longhorn.lab.jackhall.dev → Longhorn UI (chart-rendered Service
+# `longhorn-frontend` in this namespace). Attaches cross-namespace to
+# the central `lab` Gateway in gateway-system (issue #48); TLS
+# terminates there with the wildcard cert. The hop into the pod is
+# plaintext on port 80, matching every other addon's HTTPRoute in
+# this repo.
+#
+# No backend ReferenceGrant: the HTTPRoute and the longhorn-frontend
+# Service both live in longhorn-system. The Gateway's
+# `allowedRoutes.namespaces.from: All` already covers cross-namespace
+# attachment to gateway-system, so no per-route grant is needed there
+# either.
+#
+# Carries gethomepage.dev/* annotations so the Homepage discovery loop
+# renders a dashboard card. The `kubernetes` widget surfaces pod count
+# from the longhorn-manager DaemonSet — the natural per-node indicator
+# of Longhorn health.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: longhorn-ui
+  namespace: longhorn-system
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Longhorn
+    gethomepage.dev/description: Replicated block storage
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: longhorn.png
+    gethomepage.dev/href: https://longhorn.lab.jackhall.dev
+    # Status-discovery override. Homepage's default lookup uses
+    # `app.kubernetes.io/name=<HTTPRoute name>` in the route's
+    # namespace; the route is `longhorn-ui` and the chart's
+    # longhorn-ui Deployment carries `app=longhorn-ui` — close enough
+    # that the default would match, but pin it explicitly so a chart
+    # label drift doesn't quietly blank the status pill.
+    gethomepage.dev/app: longhorn-ui
+    gethomepage.dev/widget.type: kubernetes
+    gethomepage.dev/widget.namespace: longhorn-system
+    gethomepage.dev/widget.app: longhorn-manager
+spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile — same fix as hubble-ui / adguard-home
+  # (see #33).
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: gateway-system
+      name: lab
+      sectionName: https
+  hostnames:
+    - longhorn.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: longhorn-frontend
+          port: 80
+          weight: 1

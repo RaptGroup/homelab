@@ -186,9 +186,15 @@ ArgoCD, Homepage) is a singleton.
 
 ### Phase 2 (Longhorn)
 
-Deferred. Longhorn becomes the default `StorageClass` once a workload
-genuinely needs node-portable replicated storage. Requires a Talos
-system-extension upgrade pass (`siderolabs/iscsi-tools`,
+Deferred. Longhorn is added as a **named, non-default** `StorageClass`;
+`local-path` stays the cluster default. Workloads opt in with
+`storageClassName: longhorn` when they need node-portable storage —
+singleton stateful apps with valuable data that must survive node drain.
+Self-replicating apps (YugabyteDB, NATS, etc.) stay on `local-path` with
+pod anti-affinity; layering replication under them is write amplification
+for guarantees the app already provides.
+
+Requires a Talos system-extension upgrade pass (`siderolabs/iscsi-tools`,
 `siderolabs/util-linux-tools`), an `iscsi_tcp` kernel module, and a
 `UserVolume` patch carving an XFS partition for `/var/mnt/longhorn`.
 
