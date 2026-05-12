@@ -50,3 +50,19 @@ spec:
       - ServerSideApply=true
       - CreateNamespace=true
       - ApplyOutOfSyncOnly=true
+      # SkipHooks works around a Helm/Argo install race: the chart's
+      # `longhorn-pre-upgrade` Job is annotated `helm.sh/hook:
+      # pre-install,pre-upgrade` which Argo runs in the PreSync phase,
+      # but the Job's `serviceAccountName: longhorn-service-account` is
+      # a non-hooked resource that only lands in the Sync phase. On a
+      # fresh install the Job loops on `serviceaccount "longhorn-service-
+      # account" not found` and PreSync never completes, so Sync never
+      # starts. SkipHooks skips that pre-flight check entirely.
+      #
+      # The check exists to validate running-cluster state before a
+      # chart upgrade — meaningless on a fresh install, and on a real
+      # version bump we'd want to disable automated sync and run the
+      # upgrade by hand anyway. Documented in
+      # kubernetes/apps/longhorn/README.md so the next person bumping
+      # the chart doesn't get a silent skip.
+      - SkipHooks=true

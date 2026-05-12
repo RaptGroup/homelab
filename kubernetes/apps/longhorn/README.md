@@ -73,6 +73,27 @@ Both are owned by issue #121.
   `local-path` keeps the
   `storageclass.kubernetes.io/is-default-class=true` annotation.
 
+## Chart upgrades
+
+`application.yaml` carries `SkipHooks=true` because the chart's
+`longhorn-pre-upgrade` Helm hook (Argo PreSync) needs the
+`longhorn-service-account` Service Account, which is a non-hooked
+resource Argo only applies in the Sync phase — so on a fresh install
+the Job loops on `serviceaccount … not found` and Sync never starts.
+The pre-upgrade check validates running-cluster state before a
+version bump; it's meaningless on a fresh install and not something
+this lab wants Argo to drive on a real upgrade either.
+
+When bumping `targetRevision` to a new chart version, treat it as
+manual:
+
+1. Pause automated sync (`argocd app set longhorn --sync-policy none`)
+   or scale `selfHeal: false` temporarily.
+2. Run the pre-upgrade check by hand against the running cluster
+   (`helm template … | kubectl apply -f -` for the job manifest,
+   inspect output, delete on success).
+3. Bump `targetRevision`, let Argo sync, re-enable automation.
+
 ## Smoke test
 
 A PVC with `storageClassName: longhorn` should bind on any worker, a
