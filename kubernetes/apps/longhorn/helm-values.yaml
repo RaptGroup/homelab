@@ -18,6 +18,33 @@
 #     explicitly rejected in ADR-0005 — distributed-DB StatefulSets
 #     want local-path with anti-affinity, not replicated-under-replicated.
 
+# Disable the pre-upgrade check Job entirely. The chart's
+# `longhorn-pre-upgrade` Job is annotated `helm.sh/hook: pre-upgrade`,
+# which Argo classifies as a PreSync hook task and runs on every
+# sync — including the initial install, despite the hook only being
+# meaningful before a version bump. The Job references the chart's
+# `longhorn-service-account`, which is a non-hooked resource that
+# only lands in Argo's Sync phase, so on a fresh install the Job
+# loops on `serviceaccount … not found` and PreSync never completes.
+# Argo's `SkipHooks=true` syncOption is meant to bypass this but is
+# not honored for Helm-annotated hooks in Argo v3.4.x — Argo logs
+# `skipHooks=false` and still runs the task.
+#
+# The chart authors anticipated this and provide a chart-native
+# opt-out, with their own values.yaml comment explicitly saying:
+# "Disable this setting when installing Longhorn using Argo CD or
+# other GitOps solutions." That's what's flipped here. The Job is
+# not rendered at all → no hook task → no race.
+#
+# On a real chart-version bump in this lab, run the pre-upgrade
+# check by hand against the running cluster (`helm template …
+# --show-only templates/preupgrade-job.yaml | kubectl apply -f -`
+# with `preUpgradeChecker.jobEnabled: true` and a temporary SA),
+# inspect the result, then bump `targetRevision`. Documented in
+# kubernetes/apps/longhorn/README.md.
+preUpgradeChecker:
+  jobEnabled: false
+
 persistence:
   # `longhorn` registers as a StorageClass but does NOT carry the
   # `storageclass.kubernetes.io/is-default-class=true` annotation.
