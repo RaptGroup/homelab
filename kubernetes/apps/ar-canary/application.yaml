@@ -1,0 +1,44 @@
+# Canary slice for the preview-environment Artifact Registry repo
+# (issue #125 / ADR-0006). Owns:
+#
+#   - The `ar-canary` namespace.
+#   - The ExternalSecret that syncs the cluster-pull SA's JSON key
+#     from GSM.
+#   - The ESO GCRAccessToken Generator that exchanges that key for a
+#     short-lived OAuth access token every 30 minutes.
+#   - The ExternalSecret that wraps the generator output as a
+#     `kubernetes.io/dockerconfigjson` Secret named `ar-pull` —
+#     the imagePullSecret real workloads reference.
+#   - A one-shot Job that pulls a private image from the repo as the
+#     end-to-end verification step.
+#
+# This addon exists as the canary slice referenced in issue #125's
+# cluster-pull acceptance criterion. When the preview-env baseline
+# (#127) lands, the ExternalSecret + Generator pair here gets
+# templated into every preview namespace and this directory goes
+# away; until then, ar-canary is the single namespace that proves the
+# pull path works.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ar-canary
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ar-canary
+  source:
+    repoURL: git@github.com:RaptGroup/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/ar-canary/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

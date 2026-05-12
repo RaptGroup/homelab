@@ -298,6 +298,65 @@ The two GCP service accounts CI uses to talk to the
 Plan and apply credentials are deliberately separate so a token
 compromised mid-plan cannot apply.
 
+### `projects` (Artifact Registry repository)
+
+The Docker-format Artifact Registry repository
+(`us-east4-docker.pkg.dev/rockingham-homelab/projects`) that holds
+preview-environment images. Region `us-east4` (Ashburn, VA) is
+closest of the four US GCP regions to the Rockingham homelab and
+to the GitHub-hosted runners that do most preview pushes. Image
+paths look like:
+
+```
+us-east4-docker.pkg.dev/rockingham-homelab/projects/<workload>:<tag>
+```
+
+The repo name `projects` deliberately matches the public preview
+subzone `projects.jackhall.dev` — image path and DNS hostname share
+the same label, so an operator reading either knows they're
+looking at the same surface. Cleanup policies delete untagged
+blobs after 7 days and tagged versions after 90 days.
+
+### `tf-ci-arc-push` and `tf-ci-cluster-pull` (Artifact Registry SAs)
+
+The two service accounts that move images in and out of the
+`projects` AR repo. Both are **repo-scoped** —
+`roles/artifactregistry.{writer,reader}` is bound at the
+repository level, not the project — so a leak does not reach
+anything else in `rockingham-homelab`. Provisioned by
+`terraform/gcp/`:
+
+- **`tf-ci-arc-push`** — `roles/artifactregistry.writer` on the
+  `projects` repo. Impersonable from any workflow whose
+  `repository` OIDC claim is in
+  `var.arc_push_repository_allowlist` (defaults: `RaptGroup/homelab`
+  and `RaptGroup/zipmenu-public`). Auth path is GitHub OIDC →
+  the `github-arc` WIF provider (separate from the
+  RaptGroup/homelab-locked `github` provider used by
+  plan/apply) → per-repo `workloadIdentityUser` binding. No
+  key material anywhere.
+- **`tf-ci-cluster-pull`** — `roles/artifactregistry.reader` on
+  the `projects` repo. Consumed by in-cluster workloads. A JSON
+  key lives in the GSM container `tf-ci-cluster-pull-key`
+  (value uploaded out of band, same pattern as
+  `argocd-repo-ssh-key`) and is exchanged in-cluster by an ESO
+  `GCRAccessToken` generator for a short-lived dockerconfigjson
+  rotated every 30 minutes; see [`ar-canary`](#ar-canary). The
+  long-lived credential is the SA key in GSM. Full
+  cluster→GCP WIF (no key at all) would need a publicly-reachable
+  Talos OIDC discovery endpoint plus a WIF pool trusting it —
+  deliberately out of scope for #125.
+
+### `ar-canary`
+
+The canary namespace that exercises the AR cluster-pull path
+end-to-end while the preview-env baseline is still in flight.
+Runs the `ExternalSecret` + `GCRAccessToken` + dockerconfigjson
+chain that the preview-env baseline will eventually template
+into every preview namespace; lives under
+`kubernetes/apps/ar-canary/` and gets deleted in the PR that
+lands that baseline. See ADR-0006 / #125.
+
 ### Preview-environment workflow
 
 The path a branch / PR build takes to become a public preview at

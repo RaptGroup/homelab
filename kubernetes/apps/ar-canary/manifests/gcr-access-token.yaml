@@ -1,0 +1,23 @@
+# Exchanges the cluster-pull SA's JSON key for a short-lived GCP
+# OAuth access token scoped to Artifact Registry. The token's lifetime
+# is ~1 hour at the GCP API level; the ExternalSecret in
+# external-secret-docker-config.yaml refreshes it every 30 minutes so
+# the dockerconfigjson Pods reference never drifts past half-life.
+#
+# `projectID` must match the GCP project that owns the AR repo
+# (matches terraform/gcp/var.project_id). The token is repo-scoped by
+# the cluster-pull SA's IAM (roles/artifactregistry.reader on the
+# `projects` repo only, set in terraform/gcp/main.tf) — the generator
+# does not constrain scope itself, the SA's role does.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GCRAccessToken
+metadata:
+  name: ar-pull-token
+  namespace: ar-canary
+spec:
+  projectID: rockingham-homelab
+  auth:
+    secretRef:
+      secretAccessKeySecretRef:
+        name: ar-pull-sa-key
+        key: credentials.json

@@ -110,3 +110,36 @@ variable "ci_apply_environment" {
   type        = string
   default     = "gcp"
 }
+
+variable "artifact_registry_region" {
+  description = "Regional location for the Artifact Registry repository. us-east4 (Ashburn, VA) is geographically closest to the Rockingham homelab — image push from GitHub-hosted runners on the east coast and image pull from the homelab both win on latency vs. the us-central1 default used elsewhere in this root."
+  type        = string
+  default     = "us-east4"
+}
+
+variable "artifact_registry_repository_id" {
+  description = "ID of the Docker-format Artifact Registry repository hosting preview-environment images. The repo name matches the preview-env subzone (projects.jackhall.dev) on purpose: image paths and DNS hostnames share the `projects` label, so an operator reading either knows they're looking at the same surface."
+  type        = string
+  default     = "projects"
+}
+
+variable "arc_push_repository_allowlist" {
+  description = "GitHub `owner/repo` values whose workflows are allowed to impersonate the Artifact Registry push SA. Must stay a subset of the union of repos selected in the two ARC GitHub App installations (CONTEXT.md → ARC). Each entry gets its own workloadIdentityUser binding keyed on `attribute.repository`, and the dedicated `github-arc` WIF provider's attribute_condition rejects any other repo at the pool boundary — defense in depth so a leaked OIDC token from an unallowed repo cannot mint a push token."
+  type        = list(string)
+  default = [
+    "RaptGroup/homelab",
+    "RaptGroup/zipmenu-public",
+  ]
+}
+
+variable "arc_push_sa_id" {
+  description = "Service account ID (the part before @) for the Artifact Registry push SA. roles/artifactregistry.writer scoped to the `projects` repo, not project-wide. Impersonable from any workflow whose `repository` claim is in arc_push_repository_allowlist."
+  type        = string
+  default     = "tf-ci-arc-push"
+}
+
+variable "cluster_pull_sa_id" {
+  description = "Service account ID (the part before @) for the in-cluster Artifact Registry pull SA. roles/artifactregistry.reader scoped to the `projects` repo. A JSON key for this SA lives in GSM (container TF-managed here, value uploaded out of band) and is exchanged in-cluster by an ESO GCRAccessToken generator for a short-lived dockerconfigjson — see kubernetes/apps/ar-canary/."
+  type        = string
+  default     = "tf-ci-cluster-pull"
+}

@@ -23,6 +23,14 @@ dedicated project (`rockingham-homelab` by default):
   [`terraform-apply` workflow](../../.github/workflows/terraform-apply.yml)
   whose impersonation is gated on the `gcp` GitHub deployment
   environment (see ADR-0004).
+- Artifact Registry repository `projects` (Docker, regional in
+  `us-east4`) for preview-environment images (ADR-0006), plus a second
+  WIF provider scoped to the ARC repository allowlist, a push SA
+  (`tf-ci-arc-push`, repo-scoped `roles/artifactregistry.writer`)
+  impersonable from any allowlisted repo's workflows, and a pull SA
+  (`tf-ci-cluster-pull`, repo-scoped `roles/artifactregistry.reader`)
+  whose JSON key lives in a GSM container consumed in-cluster by
+  [`kubernetes/apps/ar-canary/`](../../kubernetes/apps/ar-canary).
 
 State lives in `gs://rockingham-homelab-tfstate/terraform/gcp/` so local
 and CI applies share the same state. The bucket is created by this same
@@ -73,6 +81,7 @@ is taken globally.
 - `dns.googleapis.com`
 - `secretmanager.googleapis.com`
 - `storage.googleapis.com`
+- `artifactregistry.googleapis.com`
 
 `disable_on_destroy = false` so a partial destroy doesn't disable APIs
 that other tooling (gcloud, the console) might still need before the
@@ -239,17 +248,128 @@ it, so the first apply that creates it is necessarily local:
    state, surfaces the diff in the job log, pauses for environment
    approval if there is a diff, and applies the approved plan.
 
+## Artifact Registry: preview-env images
+
+The `projects` Artifact Registry repository (Docker, regional in
+`us-east4`) holds preview-environment images per
+[ADR-0006](../../docs/adr/0006-public-preview-environments-via-cloudflare-tunnel.md).
+Image paths look like:
+
+```
+us-east4-docker.pkg.dev/rockingham-homelab/projects/<workload>:<tag>
+```
+
+The repository name `projects` mirrors the public preview subzone
+`projects.jackhall.dev` so an operator reading either path knows
+they're looking at the same surface. Cleanup policies delete
+untagged blobs after 7 days and tagged versions after 90 days —
+preview tags churn naturally with PR lifecycle, the cleanup just
+keeps the floor stable.
+
+Two service accounts back the pull/push split. Both roles are
+**repository-scoped**, not project-wide — neither SA can reach
+anything else in `rockingham-homelab`:
+
+| Service account                  | Role                              | Used by                                   |
+|----------------------------------|-----------------------------------|-------------------------------------------|
+| `tf-ci-arc-push` (default ID)    | `roles/artifactregistry.writer`   | ARC-pool workflows (push)                 |
+| `tf-ci-cluster-pull` (default ID)| `roles/artifactregistry.reader`   | In-cluster workloads (pull)               |
+
+### Push: ARC → AR via WIF
+
+A dedicated WIF provider `github-arc` lives in the same
+`github-actions` pool as the existing plan/apply providers but with
+a wider `attribute_condition` matching any repository in
+`var.arc_push_repository_allowlist` (defaults: `RaptGroup/homelab`
+and `RaptGroup/zipmenu-public`; extend to brazostech repos when
+those exist). The push SA's `workloadIdentityUser` bindings are
+per-repo principalSets keyed on `attribute.repository`, so the
+allowlist is enforced at both the pool boundary and the
+SA-binding level — defense in depth.
+
+The existing `github` provider (locked to `RaptGroup/homelab` for
+the plan/apply SAs) is unchanged. Widening that provider's repo
+gate would also widen `tf-ci-apply`'s reachable token set
+(apply's principalSet keys on `attribute.environment` alone), so
+ARC push gets its own provider rather than relaxing the apply gate.
+
+After the first apply that lands these resources, wire them up in a
+workflow with the `google-github-actions/auth@v2` action:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+steps:
+  - uses: google-github-actions/auth@v2
+    with:
+      workload_identity_provider: ${{ vars.GCP_ARC_WIF_PROVIDER }}
+      service_account:            ${{ vars.GCP_ARC_PUSH_SA }}
+  - run: gcloud auth configure-docker us-east4-docker.pkg.dev --quiet
+  - run: docker push us-east4-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/projects/<workload>:<tag>
+```
+
+Set these GitHub **Actions repository variables** to the values
+printed by `tofu output`:
+
+| Repository variable     | Value                                                  |
+|-------------------------|--------------------------------------------------------|
+| `GCP_ARC_WIF_PROVIDER`  | `tofu output -raw arc_workload_identity_provider`      |
+| `GCP_ARC_PUSH_SA`       | `tofu output -raw arc_push_service_account_email`      |
+| `GCP_AR_REPO_URL`       | `tofu output -raw artifact_registry_repository_url`    |
+
+### Pull: cluster → AR via in-namespace ESO generator
+
+Talos has no GKE-style workload identity, so the cluster authenticates
+to AR with a JSON key for `tf-ci-cluster-pull`. The key value lives in
+GSM (container TF-managed here, value uploaded out of band — same
+pattern as `argocd-repo-ssh-key`, `arc-app-private-key`, and
+`talos-cluster-secrets`). Inside the cluster, an ESO
+`GCRAccessToken` generator exchanges the key for a short-lived
+OAuth access token every 30 minutes; the resulting
+`kubernetes.io/dockerconfigjson` Secret is what Pods reference as
+`imagePullSecrets`. See
+[`kubernetes/apps/ar-canary/`](../../kubernetes/apps/ar-canary)
+for the canary deployment that exercises this path end-to-end.
+
+After the first apply, mint and upload the JSON key (one-time;
+re-run for rotation):
+
+```sh
+gcloud iam service-accounts keys create /tmp/cluster-pull.json \
+  --iam-account=$(tofu output -raw cluster_pull_service_account_email) \
+  --project=$(tofu output -raw project_id)
+gcloud secrets versions add $(tofu output -raw cluster_pull_sa_key_secret_id) \
+  --project=$(tofu output -raw project_id) \
+  --data-file=/tmp/cluster-pull.json
+shred -u /tmp/cluster-pull.json
+```
+
+The cluster→GCP WIF path (no key at all) would require publishing
+the Talos cluster's OIDC discovery document to a public endpoint
+and configuring a WIF pool with the cluster as a trusted identity
+provider — a meaningfully larger project deliberately out of scope
+for #125. The repo-scoped reader role bounds blast radius if the
+key leaks, and the 30-minute dockerconfigjson rotation bounds how
+long any stolen Pod-mounted credential stays usable.
+
 ## Outputs
 
-| Output                          | Used by                                                          |
-|---------------------------------|------------------------------------------------------------------|
-| `lab_zone_name_servers`         | Operator → registrar (manual)                                    |
-| `lab_zone_name`                 | `terraform/bootstrap/` cert-manager `ClusterIssuer` config       |
-| `cert_manager_sa_email`         | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
-| `eso_sa_email`                  | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
-| `project_id`                    | Anything that needs to qualify GSM secret refs                   |
-| `project_number`                | Some GCP APIs / IAM bindings require the numeric form            |
-| `tfstate_bucket`                | Other TF roots' backend blocks (hardcoded; this is just a sanity output) |
-| `ci_workload_identity_provider`   | `GCP_WIF_PROVIDER` Actions repository variable                 |
-| `ci_service_account_email`        | `GCP_CI_SA` Actions repository variable                        |
-| `ci_apply_service_account_email`  | `GCP_APPLY_SA` Actions repository variable                     |
+| Output                                | Used by                                                          |
+|---------------------------------------|------------------------------------------------------------------|
+| `lab_zone_name_servers`               | Operator → registrar (manual)                                    |
+| `lab_zone_name`                       | `terraform/bootstrap/` cert-manager `ClusterIssuer` config       |
+| `cert_manager_sa_email`               | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
+| `eso_sa_email`                        | `terraform/bootstrap/` (creates the SA key K8s Secret)           |
+| `project_id`                          | Anything that needs to qualify GSM secret refs                   |
+| `project_number`                      | Some GCP APIs / IAM bindings require the numeric form            |
+| `tfstate_bucket`                      | Other TF roots' backend blocks (hardcoded; this is just a sanity output) |
+| `ci_workload_identity_provider`       | `GCP_WIF_PROVIDER` Actions repository variable                   |
+| `ci_service_account_email`            | `GCP_CI_SA` Actions repository variable                          |
+| `ci_apply_service_account_email`      | `GCP_APPLY_SA` Actions repository variable                       |
+| `arc_workload_identity_provider`      | `GCP_ARC_WIF_PROVIDER` Actions repository variable               |
+| `arc_push_service_account_email`      | `GCP_ARC_PUSH_SA` Actions repository variable                    |
+| `artifact_registry_repository_url`    | `GCP_AR_REPO_URL` Actions repository variable; image-path prefix |
+| `cluster_pull_service_account_email`  | Operator → `gcloud iam service-accounts keys create` (key mint)  |
+| `cluster_pull_sa_key_secret_id`       | Operator → `gcloud secrets versions add` (key upload)            |
