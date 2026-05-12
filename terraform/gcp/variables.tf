@@ -144,14 +144,8 @@ variable "cluster_pull_sa_id" {
   default     = "tf-ci-cluster-pull"
 }
 
-variable "projects_dns_name" {
-  description = "FQDN of the public preview-env subzone NS-delegated from the apex to Cloudflare (ADR-0006). Trailing dot is added automatically. Records inside this zone live in Cloudflare, not in Cloud DNS; only the NS delegation lives here."
-  type        = string
-  default     = "projects.jackhall.dev"
-}
-
-variable "projects_zone_nameservers" {
-  description = "Cloudflare-assigned authoritative nameservers for var.projects_dns_name. Required to NS-delegate the subzone from the apex Cloud DNS zone to Cloudflare. Empty list means no delegation record is published (bootstrap state: the Cloudflare zone has not been created yet). After `terraform/cloudflare/` applies for the first time, run `tofu output -raw projects_zone_nameservers_json` there and paste the four NS values into terraform.tfvars here, then re-apply this root. The two-step bootstrap is deliberate: a `terraform_remote_state` reference from `terraform/gcp/` into `terraform/cloudflare/` would invert the natural dependency direction (cloudflare depends on the GSM container for its API token, which gcp creates)."
-  type        = list(string)
-  default     = []
-}
+# Note: variables `projects_dns_name` and `projects_zone_nameservers` were
+# removed in #126's apex-on-CF refactor (#145). The projects.jackhall.dev
+# name space is no longer a separate Cloud DNS or Cloudflare subzone — its
+# records live as records inside the CF apex zone, owned by
+# terraform/cloudflare/. No NS delegation at this layer.

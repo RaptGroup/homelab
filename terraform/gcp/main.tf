@@ -44,19 +44,26 @@ resource "google_project_service" "enabled" {
   disable_on_destroy = false
 }
 
-# Apex `jackhall.dev` zone. Squarespace's nameserver field for the domain
-# already points at Cloud DNS (the lab subzone NS got applied at the apex
-# level when the user delegated), so the apex *has* to live in Cloud DNS
-# too — otherwise the assigned ns-cloud-* nameservers return REFUSED for
-# anything at the apex and Let's Encrypt's CAA walk SERVFAILs while
-# trying to issue `*.lab.jackhall.dev` (the walk goes
-# `*.lab.jackhall.dev` → `lab.jackhall.dev` → `jackhall.dev` → `dev`).
+# --- VESTIGIAL: Cloud DNS apex zone ----------------------------------------
 #
-# This zone holds only what the apex genuinely needs — an SOA/NS pair
-# (auto-managed by Cloud DNS), the explicit CAA permitting Let's Encrypt,
-# and an in-bailiwick NS record delegating `lab.jackhall.dev` to the
-# subzone below. No A/AAAA at the apex; the homelab does not host
-# anything at `jackhall.dev` itself.
+# As of 2026-05-12 (#145, ADR-0003 amendment) the apex `jackhall.dev` has
+# moved to Cloudflare. Squarespace's registrar nameservers no longer point
+# at Cloud DNS once that flip is complete; this zone and its records become
+# unreachable.
+#
+# The resources below stay in place as a **dormant fallback during
+# Squarespace propagation**. Both Cloud DNS and CF publish the same apex
+# CAA (`letsencrypt.org`) and the same lab NS delegation
+# (`ns-cloud-d{1,2,3,4}.googledomains.com.`), so any resolver hitting
+# either side mid-flip gets a consistent answer and cert-manager keeps
+# working. Issue #146 destroys this block once the migration is verified
+# stable (cert-manager has renewed at least once through the CF-apex CAA
+# walk, all public resolvers return CF NS for the apex).
+#
+# Until then, `tofu plan` should show **no diff** between TF and the live
+# Cloud DNS state — these resources are static historical artifacts, not
+# active configuration. If you find yourself wanting to edit them, you
+# probably want terraform/cloudflare/ instead.
 resource "google_dns_managed_zone" "apex" {
   project     = google_project.lab.project_id
   name        = var.apex_zone_name
@@ -100,37 +107,16 @@ resource "google_dns_record_set" "apex_lab_delegation" {
   rrdatas = google_dns_managed_zone.lab.name_servers
 }
 
-# NS delegation for the projects.jackhall.dev subzone to Cloudflare (ADR-0006).
-# Unlike the lab subzone — Cloud DNS on both sides of the delegation, so the
-# nameservers are knowable at plan time from another resource in this root —
-# the projects nameservers are Cloudflare-assigned and only knowable after
-# `terraform/cloudflare/` has created the zone. The two-root bootstrap
-# sequence is:
+# NS delegation for the projects.jackhall.dev subzone deliberately does NOT
+# exist here. ADR-0006's original framing put `projects.*` in a separate
+# Cloudflare-managed subdomain zone NS-delegated from this apex; the
+# 2026-05-12 amendment (#145) puts those records as records inside the CF
+# apex zone instead — no separate subzone, no NS delegation needed at this
+# layer. terraform/cloudflare/ owns the projects.* records directly.
 #
-#   1. apply terraform/gcp/ with projects_zone_nameservers=[]
-#      (creates the cloudflare-api-token GSM container so the operator
-#      can upload the API token used by the cloudflare provider).
-#   2. operator uploads the CF API token to GSM.
-#   3. apply terraform/cloudflare/ (creates zone, tunnel, CAA, CNAME;
-#      outputs the four Cloudflare-assigned NS records).
-#   4. operator pastes those NS records into terraform/gcp/terraform.tfvars
-#      and re-applies this root to publish the delegation.
-#
-# Until step 4, public resolvers fall through the apex looking for
-# `projects.jackhall.dev` and get NXDOMAIN — which is exactly what we want
-# (no half-delegated state with a CNAME that resolves but a parent zone
-# that doesn't know about the subzone).
-resource "google_dns_record_set" "apex_projects_delegation" {
-  count = length(var.projects_zone_nameservers) > 0 ? 1 : 0
-
-  project      = google_project.lab.project_id
-  managed_zone = google_dns_managed_zone.apex.name
-  name         = "${var.projects_dns_name}."
-  type         = "NS"
-  ttl          = 21600
-
-  rrdatas = var.projects_zone_nameservers
-}
+# This block is retained as a structural comment so a future reader who
+# expects the original ADR-0006 shape doesn't go looking for a missing
+# resource — the absence is intentional, not an oversight.
 
 # Public managed zone delegated from the apex via the NS record above.
 # cert-manager creates ACME TXT records here.

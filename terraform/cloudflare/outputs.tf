@@ -1,16 +1,16 @@
-output "projects_zone_id" {
-  description = "Cloudflare zone ID for projects.jackhall.dev. Mostly useful for follow-up CF API calls; not consumed by another TF root."
-  value       = local.projects_zone.id
+output "apex_zone_id" {
+  description = "Cloudflare zone ID for jackhall.dev. Mostly useful for follow-up CF API calls; not consumed by another TF root."
+  value       = local.apex_zone.id
 }
 
-output "projects_zone_nameservers" {
-  description = "The four authoritative nameservers Cloudflare has assigned to the projects.jackhall.dev zone. Paste this list into terraform/gcp/terraform.tfvars as `projects_zone_nameservers = [...]` and re-apply terraform/gcp/ to publish the NS delegation at the apex."
-  value       = local.projects_zone.name_servers
+output "apex_zone_nameservers" {
+  description = "The two authoritative nameservers Cloudflare has assigned to the jackhall.dev zone. Paste these into Squarespace's registrar nameserver fields (replacing the four `ns-cloud-a*.googledomains.com.` values currently configured) to flip the apex from Cloud DNS to Cloudflare. Until that flip, the CF zone is `Pending Nameserver Update` and only resolvers querying CF directly see these records."
+  value       = local.apex_zone.name_servers
 }
 
-output "projects_zone_nameservers_json" {
-  description = "Same as projects_zone_nameservers, but pre-formatted as JSON so `tofu output -raw projects_zone_nameservers_json` drops directly into a tfvars file. Convenience wrapper, not a separate piece of data."
-  value       = jsonencode(local.projects_zone.name_servers)
+output "apex_zone_nameservers_json" {
+  description = "Same as apex_zone_nameservers, but pre-formatted as JSON so `tofu output -raw apex_zone_nameservers_json` is convenient for scripting. The Squarespace registrar UI takes them one at a time, so the raw output is the operationally useful form."
+  value       = jsonencode(local.apex_zone.name_servers)
 }
 
 output "tunnel_id" {

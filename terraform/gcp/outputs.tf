@@ -123,7 +123,7 @@ output "cloudflare_tunnel_token_secret_id" {
   value       = google_secret_manager_secret.cloudflare_tunnel_token.secret_id
 }
 
-output "projects_dns_name" {
-  description = "FQDN of the public preview-env subzone (ADR-0006). Consumed by terraform/cloudflare/ to name the Cloudflare zone."
-  value       = var.projects_dns_name
+output "apex_dns_name" {
+  description = "FQDN of the apex `jackhall.dev` (without trailing dot). Consumed by terraform/cloudflare/ via terraform_remote_state to look up the CF apex zone."
+  value       = var.apex_dns_name
 }

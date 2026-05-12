@@ -10,12 +10,14 @@ ArgoCD. Phase 1 addons are running today.
   Cloud DNS zone for `lab.jackhall.dev`, service accounts for cert-manager
   and ESO, GSM secret containers, GCS state bucket, and the Workload
   Identity Federation pool used by CI.
-- [`terraform/cloudflare/`](./terraform/cloudflare) — the Cloudflare-side
-  records for `projects.jackhall.dev` (ADR-0006): zone CAA records, the
-  named Cloudflare Tunnel that fronts the public preview-env Gateway,
-  the tunnel's ingress config, and the wildcard CNAME. Reads the CF API
-  token from GSM; writes the per-tunnel connector token back to GSM for
-  the in-cluster `cloudflared` addon to consume.
+- [`terraform/cloudflare/`](./terraform/cloudflare) — the CF-managed
+  apex `jackhall.dev` zone's records (ADR-0003 + ADR-0006, both amended
+  2026-05-12): apex CAA mirroring the pre-move Cloud DNS pin, NS
+  delegation for `lab.jackhall.dev` back to Cloud DNS, CAA exception
+  for the projects preview surface, the named Cloudflare Tunnel + its
+  ingress config + wildcard CNAME. Reads the CF API token from GSM;
+  writes the per-tunnel connector token back to GSM for the in-cluster
+  `cloudflared` addon to consume.
 - [`terraform/bootstrap/`](./terraform/bootstrap) — cluster bootstrap, in
   order: Gateway API CRDs → Cilium (CNI + kube-proxy replacement + LB IPAM
   + Gateway API) → cert-manager → External Secrets Operator →
