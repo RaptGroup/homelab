@@ -62,6 +62,34 @@ bump must re-resolve to a factory URL pinned at the new version (and the
 schematic ID above stays valid). Update the URL in this README, then roll
 the workers with `talosctl upgrade --image factory.talos.dev/installer/<id>:<new-version>`.
 
+## Worker disk layout
+
+Workers have a 2 TB NVMe (`/dev/nvme0n1`). Talos's default `EPHEMERAL` volume
+auto-grows to consume the whole disk, leaving no free space for Longhorn.
+Each `worker-*.yaml` patch caps `EPHEMERAL` at **200 GiB** and declares a
+`UserVolumeConfig` named `longhorn` that claims the remainder (~1.8 TiB),
+mounted at `/var/mnt/longhorn` as XFS.
+
+Note: on Talos v1.13 the `iscsi_tcp` kernel module is **built into** the
+kernel image, so `lsmod | grep iscsi_tcp` returns nothing. Functionality is
+confirmed via `/sys/module/iscsi_tcp` and the `ext-iscsid` service from the
+`iscsi-tools` extension. The patch still declares `machine.kernel.modules`
+as a no-op safety net in case a future Talos version ships it as a loadable
+module.
+
+### Resizing after the fact
+
+Shrinking `EPHEMERAL` requires wiping it (XFS cannot shrink). For a worker
+that was installed before the cap landed:
+
+```sh
+talosctl --nodes <ip> apply-config --file talos/_out/worker-XX.yaml
+talosctl --nodes <ip> reset --system-labels-to-wipe EPHEMERAL --reboot --graceful=false
+```
+
+This loses containerd image cache + pod ephemeral state on that worker only.
+Cordon and drain first.
+
 ## First-time generation
 
 Run from the repo root.
