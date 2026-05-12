@@ -35,11 +35,17 @@ were considered and rejected.
 Every Longhorn pod lands on a worker — none on `cp-0{1,2,3}`. Two
 mechanisms, deliberately overlapping:
 
-1. **nodeSelector**: `node-role.kubernetes.io/worker: ""`. The label is
+1. **nodeSelector**: `lab.jackhall.dev/role: worker`. The label is
    set on each worker via `nodeLabels` in `talos/patches/nodes/worker-*.yaml`.
    Applied per-component in `helm-values.yaml` (`longhornManager`,
    `longhornDriver`, `longhornUI`) and to CSI sidecars via
-   `defaultSettings.systemManagedComponentsNodeSelector`.
+   `defaultSettings.systemManagedComponentsNodeSelector`. Custom
+   prefix on purpose — NodeRestriction admission forbids the kubelet
+   from self-setting any label under `kubernetes.io/` or
+   `node-role.kubernetes.io/`, so the obvious-looking
+   `node-role.kubernetes.io/worker` is silently rejected on every
+   reconcile (only `node-role.kubernetes.io/control-plane` is
+   special-cased by Talos at registration).
 2. **taintToleration**: left empty so Longhorn pods do not tolerate the
    default `node-role.kubernetes.io/control-plane:NoSchedule` taint.
    Even if a future label drift makes a control plane match the

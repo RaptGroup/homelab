@@ -54,25 +54,29 @@ defaultSettings:
   # system-managed components the chart spawns indirectly. Format is
   # Longhorn-specific: `key1:value1;key2:value2`, NOT the standard
   # Kubernetes nodeSelector map.
-  systemManagedComponentsNodeSelector: "node-role.kubernetes.io/worker:"
+  systemManagedComponentsNodeSelector: "lab.jackhall.dev/role:worker"
 
 # Per-component nodeSelectors. Combined with the empty taintToleration
 # above, these guarantee every Longhorn pod (manager DaemonSet, driver
 # deployer, UI, CSI sidecars via systemManagedComponentsNodeSelector)
-# lands on a worker. The `node-role.kubernetes.io/worker` label is set
-# on the three workers via `nodeLabels` in their Talos patches.
+# lands on a worker. The `lab.jackhall.dev/role=worker` label is set
+# on the three workers via `nodeLabels` in their Talos patches. The
+# `node-role.kubernetes.io/worker` label would read more naturally but
+# NodeRestriction admission forbids the kubelet from self-setting it
+# (only `node-role.kubernetes.io/control-plane` is special-cased by
+# Talos at registration).
 
 longhornManager:
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    lab.jackhall.dev/role: worker
 
 longhornDriver:
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    lab.jackhall.dev/role: worker
 
 longhornUI:
   nodeSelector:
-    node-role.kubernetes.io/worker: ""
+    lab.jackhall.dev/role: worker
 
 # The chart's built-in `ingress` block uses Ingress + IngressClass;
 # this lab terminates TLS at the central Cilium Gateway and routes
