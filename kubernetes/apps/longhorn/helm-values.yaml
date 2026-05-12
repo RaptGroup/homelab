@@ -1,0 +1,83 @@
+# Longhorn chart values. ADR-0005 ("Longhorn as a named, non-default
+# StorageClass") is the binding decision record — re-read that before
+# touching anything in this file.
+#
+# What this install IS:
+#   - A second StorageClass named `longhorn`, NOT default. local-path
+#     keeps the `storageclass.kubernetes.io/is-default-class=true`
+#     annotation; nothing in this chart claims it.
+#   - Workers-only — every Longhorn DaemonSet / Deployment lands on the
+#     three workers, never on cp-0{1,2,3}.
+#   - Data path = `/var/mnt/longhorn`, the XFS UserVolume the Talos
+#     patches carve out of `/dev/nvme0n1` free space (issue #121).
+#
+# What this install IS NOT (deferred — own slices):
+#   - A backup target. `backupTarget` and `backupTargetCredentialSecret`
+#     stay blank; issue #123 wires GCS via the S3 interop API.
+#   - The cluster default. Flipping the default to `longhorn` was
+#     explicitly rejected in ADR-0005 — distributed-DB StatefulSets
+#     want local-path with anti-affinity, not replicated-under-replicated.
+
+persistence:
+  # `longhorn` registers as a StorageClass but does NOT carry the
+  # `storageclass.kubernetes.io/is-default-class=true` annotation.
+  # PVCs that omit storageClassName still land on local-path.
+  defaultClass: false
+  # Two replicas on a 3-worker cluster — survives one worker loss while
+  # halving the write amplification of the upstream default (3). See
+  # ADR-0005 "Decision".
+  defaultClassReplicaCount: 2
+  reclaimPolicy: Delete
+
+defaultSettings:
+  # XFS partition carved by talos/patches/nodes/worker-*.yaml's
+  # UserVolume block. The Talos extensions (iscsi-tools,
+  # util-linux-tools) are what make this mount + the iSCSI data path
+  # work; without them Longhorn pods crashloop on missing iscsiadm.
+  defaultDataPath: /var/mnt/longhorn
+  defaultReplicaCount: 2
+  # Empty taintToleration → Longhorn does NOT add any tolerations to
+  # its pods, so the default Talos control-plane NoSchedule taint
+  # (`node-role.kubernetes.io/control-plane`) keeps Longhorn off the
+  # control planes. Belt + braces with the workers-only nodeSelector
+  # below: nodeSelector picks workers in; taintToleration keeps CPs
+  # out even if the label drifts.
+  taintToleration: ""
+  # Backup target intentionally blank — wired by issue #123 (GCS via
+  # S3 interop, HMAC key from terraform/gcp/ → ESO → Secret). Leaving
+  # `backupTarget` empty here means the Longhorn UI shows backups as
+  # "not configured" rather than failing to reach an unreachable
+  # target.
+  backupTarget: ""
+  backupTargetCredentialSecret: ""
+  # Apply the workers-only selector to the CSI sidecars and other
+  # system-managed components the chart spawns indirectly. Format is
+  # Longhorn-specific: `key1:value1;key2:value2`, NOT the standard
+  # Kubernetes nodeSelector map.
+  systemManagedComponentsNodeSelector: "node-role.kubernetes.io/worker:"
+
+# Per-component nodeSelectors. Combined with the empty taintToleration
+# above, these guarantee every Longhorn pod (manager DaemonSet, driver
+# deployer, UI, CSI sidecars via systemManagedComponentsNodeSelector)
+# lands on a worker. The `node-role.kubernetes.io/worker` label is set
+# on the three workers via `nodeLabels` in their Talos patches.
+
+longhornManager:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+
+longhornDriver:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+
+longhornUI:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+
+# The chart's built-in `ingress` block uses Ingress + IngressClass;
+# this lab terminates TLS at the central Cilium Gateway and routes
+# every addon hostname via HTTPRoute instead. The `longhorn.lab.jackhall.dev`
+# route lives in manifests/httproute.yaml and targets the chart-
+# rendered `longhorn-frontend` Service in this namespace.
+ingress:
+  enabled: false
