@@ -87,3 +87,28 @@ output "ci_apply_service_account_email" {
   description = "Email of the apply CI service account (roles/owner, env-scoped WIF). Set this as the GCP_APPLY_SA repository variable in GitHub Actions."
   value       = google_service_account.tf_ci_apply.email
 }
+
+output "artifact_registry_repository_url" {
+  description = "Hostname-qualified URL of the preview-env Artifact Registry repository, used as the image-path prefix from both ARC pushes and cluster pulls. Full image paths look like `<this>/<workload>:<tag>`."
+  value       = "${google_artifact_registry_repository.projects.location}-docker.pkg.dev/${google_project.lab.project_id}/${google_artifact_registry_repository.projects.repository_id}"
+}
+
+output "arc_push_service_account_email" {
+  description = "Email of the Artifact Registry push SA. Set as the GCP_ARC_PUSH_SA Actions repository variable so ARC workflows can pass it to google-github-actions/auth."
+  value       = google_service_account.arc_push.email
+}
+
+output "arc_workload_identity_provider" {
+  description = "Full resource name of the GitHub OIDC provider scoped to the ARC repository allowlist. Set as the GCP_ARC_WIF_PROVIDER Actions repository variable so ARC workflows can pass it to google-github-actions/auth."
+  value       = google_iam_workload_identity_pool_provider.github_arc.name
+}
+
+output "cluster_pull_service_account_email" {
+  description = "Email of the in-cluster Artifact Registry pull SA. Referenced by the GCRAccessToken generator under kubernetes/apps/ar-canary/."
+  value       = google_service_account.cluster_pull.email
+}
+
+output "cluster_pull_sa_key_secret_id" {
+  description = "GSM secret ID holding the cluster-pull SA's JSON key. Versions are uploaded out of band (see terraform/gcp/README.md). The cluster-side ExternalSecret in kubernetes/apps/ar-canary/ references this secret name verbatim."
+  value       = google_secret_manager_secret.cluster_pull_sa_key.secret_id
+}

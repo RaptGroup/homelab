@@ -19,6 +19,7 @@ locals {
     "dns.googleapis.com",
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
+    "artifactregistry.googleapis.com",
   ]
 }
 
@@ -554,4 +555,184 @@ resource "google_service_account_iam_member" "tf_ci_apply_wif_user" {
   service_account_id = google_service_account.tf_ci_apply.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.environment/${var.ci_apply_environment}"
+}
+
+# --- Artifact Registry: preview-environment images -------------------------
+#
+# Docker-format regional repository holding the OCI images that
+# preview-env workloads pull. Region is us-east4 (Ashburn, VA) — closest
+# of the four US GCP regions to the Rockingham homelab, and closest to
+# GitHub-hosted runners on the east coast that do most preview-env
+# pushes. Image path:
+#
+#   us-east4-docker.pkg.dev/rockingham-homelab/projects/<workload>:<tag>
+#
+# The repository name mirrors the preview-env subzone
+# (`projects.jackhall.dev`) on purpose — image paths and DNS hostnames
+# share the `projects` label so an operator reading either knows
+# they're looking at the same surface.
+#
+# Cleanup policies bound preview-env churn:
+#   - Untagged blobs (failed pushes, replaced layers) are deleted after
+#     7 days. Untagged content is uniformly garbage at homelab scale.
+#   - Tagged versions are deleted after 90 days. Preview tags are
+#     usually keyed on PR / commit and rotate naturally; 90 days is
+#     generous enough that a stale-but-still-relevant branch image
+#     survives a vacation.
+resource "google_artifact_registry_repository" "projects" {
+  project       = google_project.lab.project_id
+  location      = var.artifact_registry_region
+  repository_id = var.artifact_registry_repository_id
+  description   = "Preview-environment images (ADR-0006). Pushed by tf-ci-arc-push from ARC workflows; pulled in-cluster via tf-ci-cluster-pull through an ESO GCRAccessToken generator."
+  format        = "DOCKER"
+
+  cleanup_policies {
+    id     = "delete-untagged-after-7d"
+    action = "DELETE"
+    condition {
+      tag_state  = "UNTAGGED"
+      older_than = "604800s"
+    }
+  }
+
+  cleanup_policies {
+    id     = "delete-tagged-after-90d"
+    action = "DELETE"
+    condition {
+      tag_state  = "TAGGED"
+      older_than = "7776000s"
+    }
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+# Push SA for ARC workflows. roles/artifactregistry.writer scoped to
+# the `projects` repo only (via google_artifact_registry_repository_iam_member),
+# not project-wide — a leaked push token cannot create new repositories
+# or affect anything outside the preview-env surface.
+resource "google_service_account" "arc_push" {
+  project      = google_project.lab.project_id
+  account_id   = var.arc_push_sa_id
+  display_name = "Artifact Registry push (ARC)"
+  description  = "Impersonable from ARC-pool workflows in the repository allowlist (CONTEXT.md → ARC). roles/artifactregistry.writer scoped to the `projects` repo; cannot reach anything else in the project."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_artifact_registry_repository_iam_member" "arc_push_writer" {
+  project    = google_project.lab.project_id
+  location   = google_artifact_registry_repository.projects.location
+  repository = google_artifact_registry_repository.projects.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.arc_push.email}"
+}
+
+# Dedicated WIF provider for ARC push. The existing `github` provider's
+# attribute_condition pins repository to var.github_repository
+# (RaptGroup/homelab) — narrower than the ARC App installations'
+# combined allowlist. Widening the existing provider's condition would
+# also widen tf-ci-apply's reachable token set (apply's principalSet
+# keys on attribute.environment alone, so a wider repo gate plus an
+# `environment: gcp` claim from any repo would impersonate apply).
+# A second provider keeps the apply gate untouched and gives ARC push
+# its own repo allowlist at the pool boundary, in addition to the
+# per-repo workloadIdentityUser bindings below.
+resource "google_iam_workload_identity_pool_provider" "github_arc" {
+  project                            = google_project.lab.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-arc"
+  display_name                       = "GitHub OIDC (ARC repos)"
+  description                        = "Trusts GitHub-issued OIDC tokens whose `repository` claim is in var.arc_push_repository_allowlist. Consumed by tf-ci-arc-push only; tf-ci-plan and tf-ci-apply continue to use the `github` provider, which is locked to var.github_repository."
+
+  attribute_mapping = {
+    "google.subject"             = "assertion.sub"
+    "attribute.repository"       = "assertion.repository"
+    "attribute.repository_owner" = "assertion.repository_owner"
+    "attribute.ref"              = "assertion.ref"
+    "attribute.actor"            = "assertion.actor"
+  }
+
+  attribute_condition = "assertion.repository in ${jsonencode(var.arc_push_repository_allowlist)}"
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+# Per-repo workloadIdentityUser bindings. The attribute_condition above
+# is the pool-level gate; this set is the SA-level gate. Both must
+# pass — an OIDC token from a repo not in the allowlist is rejected
+# before reaching the SA, and a token from an allowlisted repo can
+# only act as this specific SA via its matching principalSet entry.
+resource "google_service_account_iam_member" "arc_push_wif_user" {
+  for_each = toset(var.arc_push_repository_allowlist)
+
+  service_account_id = google_service_account.arc_push.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${each.value}"
+}
+
+# In-cluster pull SA. roles/artifactregistry.reader scoped to the
+# `projects` repo. Talos has no native GKE-style workload identity, so
+# instead of a cluster→GCP WIF binding (which would need the cluster's
+# OIDC discovery document published publicly — a meaningfully bigger
+# project), the cluster authenticates as this SA via a JSON key whose
+# value lives in GSM and is uploaded out of band. ESO syncs the key
+# into the cluster, and an ESO `GCRAccessToken` generator exchanges
+# it for a short-lived OAuth token rotated every 30 minutes (the
+# dockerconfigjson Pods reference is short-lived; the underlying SA
+# key is the long-lived credential, bounded by GSM and by the
+# repo-scoped reader role). See kubernetes/apps/ar-canary/.
+resource "google_service_account" "cluster_pull" {
+  project      = google_project.lab.project_id
+  account_id   = var.cluster_pull_sa_id
+  display_name = "Artifact Registry pull (cluster)"
+  description  = "In-cluster identity that authenticates pull requests to the `projects` AR repo. roles/artifactregistry.reader scoped to the repo; cannot read anything else in the project. Key material lives in GSM; see the cluster-pull-sa-key secret container."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_artifact_registry_repository_iam_member" "cluster_pull_reader" {
+  project    = google_project.lab.project_id
+  location   = google_artifact_registry_repository.projects.location
+  repository = google_artifact_registry_repository.projects.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.cluster_pull.email}"
+}
+
+# GSM container for the cluster-pull SA's JSON key. Same shape as
+# argocd-repo-ssh-key / talos-cluster-secrets above: TF owns the
+# container so the cluster-side ExternalSecret can reference a stable
+# name on a fresh project; the value is uploaded out of band so a
+# long-lived credential is never round-tripped through TF state.
+#
+# Mint and upload (after `tofu apply` here):
+#
+#   gcloud iam service-accounts keys create /tmp/cluster-pull.json \
+#     --iam-account=tf-ci-cluster-pull@rockingham-homelab.iam.gserviceaccount.com \
+#     --project=rockingham-homelab
+#   gcloud secrets versions add tf-ci-cluster-pull-key \
+#     --project=rockingham-homelab \
+#     --data-file=/tmp/cluster-pull.json
+#   shred -u /tmp/cluster-pull.json
+#
+# Rotation: re-run those three commands. ESO picks up the new version
+# at its next refresh (default 1h) and the next GCRAccessToken refresh
+# (30m) starts using it.
+resource "google_secret_manager_secret" "cluster_pull_sa_key" {
+  project   = google_project.lab.project_id
+  secret_id = "tf-ci-cluster-pull-key"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "ar-canary"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
 }
