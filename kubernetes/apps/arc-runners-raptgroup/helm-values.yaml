@@ -11,6 +11,33 @@ githubConfigUrl: https://github.com/RaptGroup
 # chart change.
 githubConfigSecret: arc-runners-raptgroup-github-config
 
+# Pin the runner group explicitly. Default for an unset value is also
+# "Default" on the GitHub side, so this is functionally a no-op for
+# routing — but it's load-bearing for two reasons:
+#
+#   1. The scale set's eligibility for any given repo is evaluated by
+#      the GitHub broker against the runner group's policy at scale-set
+#      registration time, then cached for the broker's routing
+#      decisions. After flipping the Default group's
+#      `allows_public_repositories` toggle in the GitHub UI / API, the
+#      existing registration's cached "no" decision for the public
+#      RaptGroup/homelab repo stays sticky until a re-register fires.
+#      Adding (or changing) this value bumps the chart's values-hash,
+#      which the AutoscalingRunnerSet annotation tracks; the ARC
+#      controller then re-creates the listener and the scale set
+#      re-registers, picking up the new policy. After that initial
+#      use, future runner-group policy changes can be picked up by
+#      ArgoCD reconciling a one-line edit here instead of by deleting
+#      Pods out of band.
+#
+#   2. `Default` is intentional. Keeping both pools in the org's
+#      default group avoids the per-pool runner-group management
+#      surface (visibility, repo allowlist, workflow restrictions) that
+#      would otherwise duplicate the GitHub App installation's
+#      selected-repo allowlist with no extra security benefit at
+#      homelab scale.
+runnerGroup: Default
+
 # The chart's helm-template-time controller discovery relies on a
 # `lookup`, which Argo's render can't satisfy. Pin the controller SA
 # explicitly — the controller chart's fullnameOverride keeps this name
