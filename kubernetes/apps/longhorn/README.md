@@ -75,23 +75,27 @@ Both are owned by issue #121.
 
 ## Chart upgrades
 
-`application.yaml` carries `SkipHooks=true` because the chart's
-`longhorn-pre-upgrade` Helm hook (Argo PreSync) needs the
-`longhorn-service-account` Service Account, which is a non-hooked
+`helm-values.yaml` sets `preUpgradeChecker.jobEnabled: false`. The
+chart's `longhorn-pre-upgrade` Job is annotated `helm.sh/hook:
+pre-upgrade`, which Argo classifies as a PreSync hook task. The Job
+references the chart's `longhorn-service-account` — a non-hooked
 resource Argo only applies in the Sync phase — so on a fresh install
 the Job loops on `serviceaccount … not found` and Sync never starts.
-The pre-upgrade check validates running-cluster state before a
-version bump; it's meaningless on a fresh install and not something
-this lab wants Argo to drive on a real upgrade either.
+Argo's `SkipHooks=true` syncOption is meant to bypass this but is
+not honored for Helm-annotated hooks in Argo v3.4.x (the controller
+logs `skipHooks=false` and still queues the task), so the chart-
+native opt-out is what's wired here. The chart author's own
+comment on the value endorses this for GitOps installs.
 
-When bumping `targetRevision` to a new chart version, treat it as
-manual:
+When bumping `targetRevision` to a new chart version, treat the
+pre-upgrade check as manual:
 
 1. Pause automated sync (`argocd app set longhorn --sync-policy none`)
-   or scale `selfHeal: false` temporarily.
-2. Run the pre-upgrade check by hand against the running cluster
-   (`helm template … | kubectl apply -f -` for the job manifest,
-   inspect output, delete on success).
+   or set `selfHeal: false` temporarily.
+2. Run the pre-upgrade check by hand against the running cluster.
+   The simplest path is to temporarily render the Job manifest with
+   `preUpgradeChecker.jobEnabled: true` and a stub
+   `longhorn-service-account` in place, apply, inspect logs, delete.
 3. Bump `targetRevision`, let Argo sync, re-enable automation.
 
 ## Smoke test
