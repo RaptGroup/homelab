@@ -1,0 +1,64 @@
+# One-shot smoke test for the ARC → Artifact Registry push path
+# wired up in #125. Triggered manually; runs on the RaptGroup ARC
+# pool so the OIDC token's `repository` claim hits the
+# `github-arc` WIF provider's allowlist. Authenticates with
+# `google-github-actions/auth` against `tf-ci-arc-push`, then uses
+# `crane` (no daemon, single static binary — the ARC runner image
+# ships no docker / podman) to copy a tiny public image into the
+# `projects` repo at a smoke-test tag. Success means the WIF chain
+# (GitHub OIDC → provider attribute_condition → per-repo
+# workloadIdentityUser binding → SA token → repo-scoped writer
+# role) is intact end-to-end.
+name: AR push smoke (ARC → WIF)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to push under projects/hello-world. Default 'arc-smoke' overwrites the prior run on purpose so the smoke doesn't accumulate."
+        type: string
+        default: arc-smoke
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  push:
+    runs-on: [self-hosted, linux, raptgroup]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Authenticate to GCP (WIF)
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_ARC_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_ARC_PUSH_SA }}
+          token_format: access_token
+
+      - name: Install crane
+        run: |
+          set -euo pipefail
+          version=v0.20.2
+          curl -sSL "https://github.com/google/go-containerregistry/releases/download/${version}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C "${RUNNER_TEMP}" crane
+          install -m 0755 "${RUNNER_TEMP}/crane" "${RUNNER_TEMP}/crane-bin"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/crane" version
+
+      - name: Push hello-world to AR
+        env:
+          REPO_URL: ${{ vars.GCP_AR_REPO_URL }}
+          TAG: ${{ inputs.tag }}
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          host="${REPO_URL%%/*}"
+          dest="${REPO_URL}/hello-world:${TAG}"
+          echo "${ACCESS_TOKEN}" | crane auth login "${host}" \
+            --username oauth2accesstoken --password-stdin
+          crane copy docker.io/library/hello-world:latest "${dest}"
+          echo "pushed: ${dest}"
+          crane digest "${dest}"
