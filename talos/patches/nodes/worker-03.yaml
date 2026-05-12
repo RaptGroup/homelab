@@ -12,8 +12,19 @@ machine:
             gateway: 192.168.1.1
   install:
     disk: /dev/nvme0n1
+    image: factory.talos.dev/installer/613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245:v1.13.0
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig
 auto: off
 hostname: worker-03
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 100GiB
+filesystem:
+  type: xfs

@@ -22,6 +22,46 @@ Machine configuration for the `rockingham` Talos cluster.
   - `worker-02` — `192.168.1.242`
   - `worker-03` — `192.168.1.243`
 
+## Installer image (Image Factory)
+
+Workers run a custom installer built via the
+[Talos Image Factory](https://factory.talos.dev) so the `iscsi_tcp` kernel
+module and `util-linux` tooling are present for Longhorn (ADR-0005). Control
+planes still run the stock installer — Longhorn is workers-only.
+
+- **Schematic** (`customization.systemExtensions.officialExtensions`):
+  - `siderolabs/iscsi-tools`
+  - `siderolabs/util-linux-tools`
+- **Schematic ID:** `613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245`
+- **Worker installer image (Talos v1.13.0):**
+  `factory.talos.dev/installer/613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245:v1.13.0`
+- **Control-plane installer image (stock):**
+  `ghcr.io/siderolabs/installer:v1.13.0`
+
+### Rebuilding the schematic
+
+The schematic ID is the SHA-256 of the schematic YAML, so re-uploading the
+same file returns the same ID. To regenerate (or change the extension set):
+
+```sh
+cat <<'EOF' > /tmp/schematic.yaml
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/iscsi-tools
+      - siderolabs/util-linux-tools
+EOF
+
+curl -X POST --data-binary @/tmp/schematic.yaml https://factory.talos.dev/schematics
+```
+
+### Talos version upgrades
+
+System extensions are baked into the installer, so every Talos minor / patch
+bump must re-resolve to a factory URL pinned at the new version (and the
+schematic ID above stays valid). Update the URL in this README, then roll
+the workers with `talosctl upgrade --image factory.talos.dev/installer/<id>:<new-version>`.
+
 ## First-time generation
 
 Run from the repo root.
