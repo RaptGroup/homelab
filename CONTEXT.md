@@ -48,6 +48,32 @@ asking:
 
 Same names, different answers. See ADR-0003.
 
+### `projects.jackhall.dev`
+
+The DNS subzone used for **public preview environments** of PR / branch
+builds (`<svc>-<ns>.projects.jackhall.dev`). NS-delegated from the apex
+`jackhall.dev` zone in Cloud DNS to a Cloudflare-managed zone; the
+records inside the subzone live at Cloudflare, not in Cloud DNS.
+
+Distinct from `lab.jackhall.dev` on every axis worth tracking:
+
+- **Audience.** `lab` is LAN-only, for the operator and configured
+  devices. `projects` is public, for reviewers on cellular, guest
+  laptops, and colleagues.
+- **DNS provider.** `lab` lives in Cloud DNS. `projects` lives at
+  Cloudflare.
+- **Cert chain.** `lab` uses a Let's Encrypt wildcard issued by
+  cert-manager via DNS-01 against Cloud DNS, pinned by the apex CAA.
+  `projects` uses Cloudflare's edge wildcard, issued by Cloudflare's
+  contracted CAs; the subzone carries its **own CAA record** that
+  overrides the apex Let's-Encrypt-only pin for the subzone only.
+- **Front door.** `lab` is reached via the `lab` Cilium Gateway at
+  `192.168.1.201` on the LAN. `projects` is reached via Cloudflare
+  Tunnel → `cloudflared` → the `projects` Cilium Gateway's ClusterIP.
+  Nothing on the LB pool serves preview traffic.
+
+See ADR-0006.
+
 ### `rockingham-homelab` (GCP project)
 
 The single GCP project that owns every cloud-side resource for the homelab
@@ -90,6 +116,23 @@ resolution:
 
 The remaining `.202`–`.230` are first-come-first-served for any future
 `LoadBalancer` Service.
+
+### `projects` Gateway
+
+The second cluster Gateway, alongside `lab`. Lives in `gateway-system`,
+serves `*.projects.jackhall.dev` over **HTTP on port 80** (TLS
+terminates at Cloudflare's edge; the in-cluster hop is cleartext inside
+the `cloudflared` tunnel). Exposed only via a **ClusterIP** Service —
+**not** a `LoadBalancer`, so it does not consume an LB-pool address and
+is not reachable from the LAN. `cloudflared` targets it by ClusterIP.
+
+`allowedRoutes.namespaces.from: Selector` with a namespaceSelector
+requiring the label `projects.jackhall.dev/enabled=true`. Only
+namespaces created by the preview-env wrapper carry the label, so the
+Gateway will refuse to attach an HTTPRoute from any other namespace —
+the gate is structural, not by convention.
+
+See ADR-0006.
 
 ### Static cluster range (`192.168.1.240`–`192.168.1.247`)
 
@@ -254,6 +297,40 @@ The two GCP service accounts CI uses to talk to the
 
 Plan and apply credentials are deliberately separate so a token
 compromised mid-plan cannot apply.
+
+### Preview-environment workflow
+
+The path a branch / PR build takes to become a public preview at
+`<svc>-<ns>.projects.jackhall.dev`. Two wrappers, one shape:
+
+- **Local `just` recipe** — `just preview-up <repo> <branch>` /
+  `just preview-down`, run from the operator's workstation against
+  the cluster kubeconfig. Used for ad-hoc previews of work in
+  progress.
+- **PR-driven GitHub Actions workflow** — runs on an ARC pool
+  (`runs-on: [self-hosted, linux, raptgroup]` or `brazostech`,
+  per [`arc-runners-raptgroup`](#arc-runners-raptgroup) /
+  [`arc-runners-brazostech`](#arc-runners-brazostech)). Creates a
+  preview on PR open, refreshes it on push, deletes it on PR
+  close. ARC's selected-repo allowlist is the boundary that
+  controls which repos can create previews.
+
+Both wrappers render and apply the same per-namespace bundle:
+
+1. Namespace with the `projects.jackhall.dev/enabled=true` label
+   and a `projects.jackhall.dev/expires-at` annotation.
+2. `ResourceQuota` + `LimitRange` capping per-preview compute.
+3. `CiliumNetworkPolicy` allowing ingress only from the
+   `projects` Gateway and `cloudflared`, and egress only to kube
+   DNS and the public internet.
+4. The workload's manifests, plus an `HTTPRoute` attaching to the
+   `projects` Gateway.
+
+A small TTL-reaper CronJob in `projects-system` deletes any
+preview namespace whose `expires-at` has passed. There is no
+custom controller; the wrapper is the source of truth.
+
+See ADR-0006.
 
 ### Environment-per-root convention
 
