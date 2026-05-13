@@ -124,8 +124,14 @@ Seeded:
 - Admin UI on `0.0.0.0:80`, DNS on `0.0.0.0:53`
 - DoH upstreams (Cloudflare + Google) with plaintext bootstrap
 - Wildcard rewrite `*.lab.jackhall.dev → 192.168.1.201` (the central
-  `lab` Gateway). One entry covers every web-exposed addon — no
-  per-host rewrites needed as new addons come online.
+  `lab` Gateway). `lab.jackhall.dev` is LAN-only — one entry covers
+  every addon fronted by the central `lab` Gateway, no per-host
+  rewrites needed as new gateway-fronted addons come online.
+- Per-node A records for the Talos control-plane (`cp-0{1,2,3}`),
+  workers (`worker-0{1,2,3}`), and the control-plane VIP
+  (`rockingham`) under `lab.jackhall.dev`. Specific names beat the
+  wildcard, so `talosctl --nodes <hostname>` / `ssh` / `ping` work by
+  hostname (issue #135).
 - Default AdGuard DNS filter blocklist
 - DHCP server explicitly disabled (out-of-scope per PRD #4)
 
