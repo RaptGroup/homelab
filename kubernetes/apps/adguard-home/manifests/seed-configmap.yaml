@@ -12,9 +12,10 @@
 #   - Cloudflare + Google DoH upstreams (TLS-encrypted; the lab egresses
 #     plaintext DNS otherwise)
 #   - Wildcard rewrite *.lab.jackhall.dev → 192.168.1.201 (the central
-#     `lab` Gateway in gateway-system; issue #48). Every web-exposed addon
-#     hostname resolves through this single entry — no per-host rewrites
-#     are needed as new web-exposed addons come online.
+#     `lab` Gateway in gateway-system; issue #48). lab.jackhall.dev is
+#     LAN-only — every addon fronted by the central `lab` Gateway
+#     resolves through this single entry, no per-host rewrites needed
+#     as new gateway-fronted addons come online.
 #   - Per-node A records for the Talos control-plane + workers and the
 #     control-plane VIP (issue #135). Specific names beat the wildcard
 #     in AdGuard, so `talosctl --nodes <hostname>` / ssh / ping by
