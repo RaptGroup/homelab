@@ -19,21 +19,46 @@ config, kubeconfig contexts, and dashboard branding. Not a hostname.
 ### `lab.jackhall.dev`
 
 The DNS subzone used for every internal cluster service
-(`dashboard.lab.jackhall.dev`, `argocd.lab.jackhall.dev`, etc.).
-NS-delegated from the apex `jackhall.dev` zone (also in Cloud DNS) to
-its own Cloud DNS managed zone.
+(`dashboard.lab.jackhall.dev`, `argocd.lab.jackhall.dev`, etc.). The
+zone lives in **Google Cloud DNS**, managed by `terraform/gcp/`.
+Reached via an NS delegation record published at
+`lab.jackhall.dev` inside the **Cloudflare-managed apex zone**
+(`jackhall.dev`); see the apex entry below for why the apex moved.
+
+cert-manager's DNS-01 solver authenticates as the
+`cert-manager-dns01` GCP SA (`roles/dns.admin` scoped to this zone)
+and publishes ACME challenge TXT records here. The CAA walk for
+`*.lab.jackhall.dev` issuance hits the CF apex's `letsencrypt.org`
+CAA record one level up.
 
 ### `jackhall.dev` (apex)
 
-The apex domain is hosted in Cloud DNS in this repo's GCP project. The
-registrar (Squarespace) was pointed at Cloud DNS nameservers when the
-lab subzone was delegated, but those NS were applied at the apex
-nameserver field rather than as a subdomain delegation, so the apex
-has to live in Cloud DNS too — without it, queries at the apex return
-REFUSED and Let's Encrypt's CAA walk SERVFAILs while trying to issue
-`*.lab.jackhall.dev`. The apex zone holds the CAA record (Let's
-Encrypt-only) and the NS delegation for the lab subzone; nothing else
-is hosted at `jackhall.dev` itself.
+The apex domain is hosted in **Cloudflare**, managed by
+`terraform/cloudflare/`. Squarespace's registrar nameservers point
+at the two `*.ns.cloudflare.com` values CF assigned to the zone.
+
+The apex zone holds:
+- CAA `letsencrypt.org` (`issue` and `issuewild`) — gates ACME
+  issuance for `*.lab.jackhall.dev` and any other name in the
+  hierarchy below to Let's Encrypt.
+- NS records at `lab.jackhall.dev` pointing at the four
+  `ns-cloud-d{1,2,3,4}.googledomains.com.` nameservers that serve
+  the Cloud DNS `lab.jackhall.dev` zone — the inter-provider
+  delegation that keeps the lab path on Cloud DNS post-apex-move.
+- CAA exception at `projects.jackhall.dev` (allowing `pki.goog` +
+  `letsencrypt.org`) and the wildcard CNAME
+  `*.projects.jackhall.dev → <tunnel-uuid>.cfargotunnel.com` for
+  the public preview-env surface; see ADR-0006.
+
+The apex zone moved from Cloud DNS to CF in
+[#145](https://github.com/RaptGroup/homelab/issues/145) — ADR-0003
+amendment 2026-05-12 — because adding `projects.jackhall.dev` as a
+CF-managed subdomain zone required the parent zone to also be on CF
+authoritative DNS (every plan, every flow). The Cloud DNS apex zone
+remains in `terraform/gcp/` as a dormant fallback during Squarespace
+propagation; destroyed in
+[#146](https://github.com/RaptGroup/homelab/issues/146) once the
+migration is verified stable.
 
 ### Split-horizon DNS
 
@@ -50,27 +75,46 @@ Same names, different answers. See ADR-0003.
 
 ### `projects.jackhall.dev`
 
-The DNS subzone used for **public preview environments** of PR / branch
-builds (`<svc>-<ns>.projects.jackhall.dev`). NS-delegated from the apex
-`jackhall.dev` zone in Cloud DNS to a Cloudflare-managed zone; the
-records inside the subzone live at Cloudflare, not in Cloud DNS.
+The name space used for **public preview environments** of PR / branch
+builds (`<svc>-<ns>.projects.jackhall.dev`). **Not a separate DNS
+zone** — `projects.*` records live as records inside the CF-managed
+apex zone (`jackhall.dev`). Cloudflare's Universal SSL covers
+wildcards under the apex, so `*.projects.jackhall.dev` is auto-issued
+by CF's contracted CAs against the CAA exception published at the
+`projects.jackhall.dev` name inside the apex zone.
+
+Records at the `projects.jackhall.dev` and `*.projects.jackhall.dev`
+names within the CF apex zone (managed by `terraform/cloudflare/`):
+- CAA at `projects.jackhall.dev`: `pki.goog` and `letsencrypt.org`
+  (`issue` + `issuewild`). Overrides the apex `letsencrypt.org`
+  pin for this name and everything below it.
+- Wildcard CNAME at `*.projects.jackhall.dev`:
+  `<tunnel-uuid>.cfargotunnel.com`, proxied.
 
 Distinct from `lab.jackhall.dev` on every axis worth tracking:
 
 - **Audience.** `lab` is LAN-only, for the operator and configured
   devices. `projects` is public, for reviewers on cellular, guest
   laptops, and colleagues.
-- **DNS provider.** `lab` lives in Cloud DNS. `projects` lives at
-  Cloudflare.
+- **Authoritative provider.** `lab` records live in Cloud DNS;
+  `projects` records live in Cloudflare (within the CF apex zone).
 - **Cert chain.** `lab` uses a Let's Encrypt wildcard issued by
-  cert-manager via DNS-01 against Cloud DNS, pinned by the apex CAA.
-  `projects` uses Cloudflare's edge wildcard, issued by Cloudflare's
-  contracted CAs; the subzone carries its **own CAA record** that
-  overrides the apex Let's-Encrypt-only pin for the subzone only.
+  cert-manager via DNS-01 against Cloud DNS, gated by the CF apex
+  `letsencrypt.org` CAA. `projects` uses Cloudflare's edge
+  wildcard, issued by CF's contracted CAs, gated by the explicit
+  CAA exception at the `projects.jackhall.dev` name.
 - **Front door.** `lab` is reached via the `lab` Cilium Gateway at
   `192.168.1.201` on the LAN. `projects` is reached via Cloudflare
-  Tunnel → `cloudflared` → the `projects` Cilium Gateway's ClusterIP.
-  Nothing on the LB pool serves preview traffic.
+  Tunnel → `cloudflared` → the `projects` Cilium Gateway's
+  ClusterIP. Nothing on the LB pool serves preview traffic.
+
+The "not a subzone" framing comes from
+[#145](https://github.com/RaptGroup/homelab/issues/145) — ADR-0006
+amendment 2026-05-12 — because Cloudflare's subdomain-zone path
+requires the parent zone to be on CF authoritative DNS on every
+plan. With the apex already on CF (see entry above), the cleanest
+shape is to put `projects.*` records directly in the apex zone
+rather than spin up a separate subdomain zone.
 
 See ADR-0006.
 
@@ -122,17 +166,56 @@ The remaining `.202`–`.230` are first-come-first-served for any future
 The second cluster Gateway, alongside `lab`. Lives in `gateway-system`,
 serves `*.projects.jackhall.dev` over **HTTP on port 80** (TLS
 terminates at Cloudflare's edge; the in-cluster hop is cleartext inside
-the `cloudflared` tunnel). Exposed only via a **ClusterIP** Service —
-**not** a `LoadBalancer`, so it does not consume an LB-pool address and
-is not reachable from the LAN. `cloudflared` targets it by ClusterIP.
+the `cloudflared` tunnel). Lives in
+[`kubernetes/apps/projects-gateway/`](./kubernetes/apps/projects-gateway);
+`cloudflared` reaches it via the auto-generated Service
+`cilium-gateway-projects` in `gateway-system`.
+
+ADR-0006 calls for a ClusterIP-only Service so the Gateway never
+appears on the LB pool. **Cilium 1.16 (the cluster's current version)
+cannot deliver that property** — its Gateway controller always
+generates `type: LoadBalancer` for a Gateway resource, and
+`CiliumGatewayClassConfig` (parametrized GatewayClass, 1.18+) only
+supports `LoadBalancer` / `NodePort` for the generated Service. The
+manifest therefore omits `lbipam.cilium.io/ips` per the issue's "no
+LB pool IP annotation" instruction; Cilium assigns whatever's free
+from `lab-pool` and the existing `lab-l2-workers` policy ARP-announces
+it on workers. A LAN client that knows the IP and crafts a `Host:`
+header can technically reach a preview workload — the public-DNS
+path via Cloudflare is the intended route, and there's no AdGuard
+rewrite for `*.projects.jackhall.dev`. Restoring the structural-
+impossibility property is a follow-up (Cilium 1.18+ upgrade, or a
+labelled L2-announcement opt-out).
 
 `allowedRoutes.namespaces.from: Selector` with a namespaceSelector
 requiring the label `projects.jackhall.dev/enabled=true`. Only
 namespaces created by the preview-env wrapper carry the label, so the
 Gateway will refuse to attach an HTTPRoute from any other namespace —
 the gate is structural, not by convention.
+[`scripts/lint-apps.sh`](./scripts/lint-apps.sh)'s LB-pin check treats
+`from: Selector` as the marker for "this Gateway isn't on the LB pool
+by design" and skips the pin requirement on it.
 
 See ADR-0006.
+
+### `cloudflared`
+
+The outbound Cloudflare Tunnel connector that fronts the `projects`
+Gateway. One `Deployment` in the `cloudflared` namespace
+([`kubernetes/apps/cloudflared/`](./kubernetes/apps/cloudflared))
+running the `cloudflare/cloudflared` container with the per-tunnel
+connector token sourced via ESO from the GSM container
+`cloudflare-tunnel-token`. The tunnel's ingress rules are
+remote-managed (`config_src = "cloudflare"`), so the pod itself takes
+only the token — the forward target is set at the CF side by
+[`terraform/cloudflare/`](./terraform/cloudflare). Single replica;
+`maxUnavailable: 0` keeps the connector alive across image bumps.
+
+Deployed as raw manifests, not the upstream `cloudflare-tunnel-remote`
+Helm chart: that chart bakes the token into values with no
+"use an existing Secret" knob, which would put a long-lived
+credential in git. Raw manifests keep the secret on the GSM → ESO
+path that every other credential in this repo uses.
 
 ### Static cluster range (`192.168.1.240`–`192.168.1.247`)
 

@@ -143,3 +143,9 @@ variable "cluster_pull_sa_id" {
   type        = string
   default     = "tf-ci-cluster-pull"
 }
+
+# Note: variables `projects_dns_name` and `projects_zone_nameservers` were
+# removed in #126's apex-on-CF refactor (#145). The projects.jackhall.dev
+# name space is no longer a separate Cloud DNS or Cloudflare subzone — its
+# records live as records inside the CF apex zone, owned by
+# terraform/cloudflare/. No NS delegation at this layer.

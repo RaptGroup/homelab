@@ -112,3 +112,18 @@ output "cluster_pull_sa_key_secret_id" {
   description = "GSM secret ID holding the cluster-pull SA's JSON key. Versions are uploaded out of band (see terraform/gcp/README.md). The cluster-side ExternalSecret in kubernetes/apps/ar-canary/ references this secret name verbatim."
   value       = google_secret_manager_secret.cluster_pull_sa_key.secret_id
 }
+
+output "cloudflare_api_token_secret_id" {
+  description = "GSM secret ID holding the operator-minted Cloudflare API token consumed by terraform/cloudflare/. Versions are uploaded out of band (see terraform/cloudflare/README.md)."
+  value       = google_secret_manager_secret.cloudflare_api_token.secret_id
+}
+
+output "cloudflare_tunnel_token_secret_id" {
+  description = "GSM secret ID holding the per-tunnel cloudflared connector token. Versions are written by terraform/cloudflare/; the cloudflared addon's ExternalSecret consumes this name."
+  value       = google_secret_manager_secret.cloudflare_tunnel_token.secret_id
+}
+
+output "apex_dns_name" {
+  description = "FQDN of the apex `jackhall.dev` (without trailing dot). Consumed by terraform/cloudflare/ via terraform_remote_state to look up the CF apex zone."
+  value       = var.apex_dns_name
+}

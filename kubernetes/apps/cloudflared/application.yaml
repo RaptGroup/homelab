@@ -1,0 +1,34 @@
+# cloudflared — the outbound Cloudflare Tunnel connector for the public
+# preview-env path (ADR-0006). One Deployment that dials Cloudflare's
+# edge from inside the cluster and forwards inbound `*.projects.jackhall.dev`
+# requests to the `projects` Cilium Gateway.
+#
+# Single-source path-only Application. The upstream `cloudflare-tunnel-remote`
+# Helm chart bakes the connector token into values (no "use an existing
+# Secret" knob), which would put a long-lived credential in git. Raw
+# manifests under manifests/ give the same shape — one Deployment, one
+# Secret — without that compromise.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudflared
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cloudflared
+  source:
+    repoURL: git@github.com:RaptGroup/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/cloudflared/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

@@ -3,13 +3,21 @@
 Configuration for the Rockingham Homelab: a 6-node bare-metal Kubernetes
 cluster (`rockingham`) running Talos Linux.
 
-The cluster is bootstrapped by two Terraform roots and then reconciled by
+The cluster is bootstrapped by three Terraform roots and then reconciled by
 ArgoCD. Phase 1 addons are running today.
 
 - [`terraform/gcp/`](./terraform/gcp) — the GCP-side foundation: project,
   Cloud DNS zone for `lab.jackhall.dev`, service accounts for cert-manager
   and ESO, GSM secret containers, GCS state bucket, and the Workload
   Identity Federation pool used by CI.
+- [`terraform/cloudflare/`](./terraform/cloudflare) — the CF-managed
+  apex `jackhall.dev` zone's records (ADR-0003 + ADR-0006, both amended
+  2026-05-12): apex CAA mirroring the pre-move Cloud DNS pin, NS
+  delegation for `lab.jackhall.dev` back to Cloud DNS, CAA exception
+  for the projects preview surface, the named Cloudflare Tunnel + its
+  ingress config + wildcard CNAME. Reads the CF API token from GSM;
+  writes the per-tunnel connector token back to GSM for the in-cluster
+  `cloudflared` addon to consume.
 - [`terraform/bootstrap/`](./terraform/bootstrap) — cluster bootstrap, in
   order: Gateway API CRDs → Cilium (CNI + kube-proxy replacement + LB IPAM
   + Gateway API) → cert-manager → External Secrets Operator →
@@ -18,9 +26,9 @@ ArgoCD. Phase 1 addons are running today.
   self-managed ArgoCD `Application` templates Terraform applies.
 - [`kubernetes/apps/`](./kubernetes/apps) — ArgoCD-managed addons, one
   directory per addon (`adguard-home`, `arc-controller`,
-  `arc-runners-raptgroup`, `arc-runners-brazostech`, `homepage`,
-  `hubble-ui`). Adding an addon is a new directory here; Terraform is not
-  touched.
+  `arc-runners-raptgroup`, `arc-runners-brazostech`, `cloudflared`,
+  `homepage`, `hubble-ui`, `lab-gateway`, `projects-gateway`). Adding an
+  addon is a new directory here; Terraform is not touched.
 - [`talos/`](./talos) — per-node Talos machine-config patches and the
   bring-up runbook for the cluster.
 - [`scripts/lint-apps.sh`](./scripts/lint-apps.sh) — `helm template` +

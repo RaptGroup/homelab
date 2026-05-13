@@ -1,6 +1,6 @@
 # ADR-0003: Public domain, DNS-01 wildcard, split-horizon resolution
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-apex-on-cloudflare))
 - **Date:** 2026-05-10
 
 ## Context
@@ -41,6 +41,10 @@ configured per-device (Path C).** Concretely:
    registrar holds the apex zone. The `lab` subzone is **NS-delegated
    to a Google Cloud DNS zone** managed by `terraform/gcp/`. The apex
    is not modified by this repo.
+
+   *(Amended 2026-05-12: the apex itself now lives on Cloudflare; the
+   lab subzone stays on Cloud DNS via NS delegation from CF. See
+   [Amendment](#amendment-2026-05-12-apex-on-cloudflare).)*
 2. **Wildcard certificate.** A cert-manager `ClusterIssuer` configured
    for Let's Encrypt with the `cloudDNS` solver authenticates via the
    GCP service account created in `terraform/gcp/`. A wildcard
@@ -151,3 +155,99 @@ constraint that every client needs a Tailscale install. That breaks
 the guest case and the IoT case completely. Tailscale remains useful
 as a future, separate decision (remote access for the operator), but
 it is not the right answer for "how do internal services get TLS?"
+
+## Amendment 2026-05-12 (apex on Cloudflare)
+
+ADR-0006 introduces a second public surface (`projects.jackhall.dev`,
+for public preview environments) fronted by a Cloudflare Tunnel.
+Implementing that surface revealed a constraint that affects this
+ADR's apex-on-Cloud-DNS posture:
+
+**Cloudflare's subdomain-zone path on every plan requires the parent
+zone to already be on Cloudflare authoritative DNS.** Adding
+`projects.jackhall.dev` as a CF-managed zone while leaving the apex
+on Cloud DNS is not supported on the Free, Pro, or any plan below
+Business ($200/mo, via Partial CNAME Setup). ADR-0006's $0 steady-
+state cost is load-bearing in that ADR's cost-for-parity decision
+against the GCP-bastion alternative, so paying $200/mo here would
+invert the math.
+
+The narrower alternative is to **move the apex `jackhall.dev` zone
+to Cloudflare** and keep `lab.jackhall.dev` exactly as-is on Cloud
+DNS via NS delegation from the new CF-managed apex. Concretely:
+
+1. **Apex on CF.** The registrar (Squarespace) nameservers move from
+   the four `ns-cloud-a{1,2,3,4}.googledomains.com.` (Cloud DNS's
+   apex-serving NS shard) to the two `*.ns.cloudflare.com` values
+   Cloudflare assigns to the apex zone. The Cloud DNS apex zone
+   becomes vestigial — kept in `terraform/gcp/` as a dormant fallback
+   during Squarespace propagation, destroyed in a follow-up
+   ([#146](https://github.com/RaptGroup/homelab/issues/146)) once the
+   migration is verified stable.
+
+2. **Apex CAA stays `letsencrypt.org`.** CF apex publishes both
+   `issue` and `issuewild` for `letsencrypt.org`, mirroring the
+   current Cloud DNS apex CAA verbatim. The CAA walk during
+   `*.lab.jackhall.dev` renewal hits this record at the apex and
+   matches Let's Encrypt — no change to cert-manager's issuance
+   path.
+
+3. **Lab subzone on Cloud DNS, unchanged.** CF apex publishes NS
+   records at `lab.jackhall.dev` pointing at the four
+   `ns-cloud-d{1,2,3,4}.googledomains.com.` values that authoritatively
+   serve the existing Cloud DNS `lab.jackhall.dev` zone. The lab
+   zone's records, the cert-manager DNS-01 solver SA
+   (`cert-manager-dns01`), and the `roles/dns.admin` IAM binding on
+   that zone are all unchanged. cert-manager continues to publish
+   ACME TXT records to Cloud DNS exactly as before.
+
+4. **Resolution path post-flip.** For an LE validator querying
+   `_acme-challenge.lab.jackhall.dev`:
+   - Squarespace → CF NS (apex authoritative).
+   - CF apex returns NS for `lab` pointing at `ns-cloud-d*`.
+   - Public resolver follows to Cloud DNS.
+   - Cloud DNS lab zone serves the TXT.
+   - The CAA walk:
+     `_acme-challenge.lab` (no CAA) → `lab` (no CAA) →
+     `jackhall.dev` (CF, CAA = `letsencrypt.org`) → match.
+
+5. **Propagation safety.** During Squarespace propagation, some
+   public resolvers still hit the old Cloud DNS apex (kept in place);
+   others hit the new CF apex. Both publish the same CAA and the
+   same lab NS delegation, so either path resolves to the same Cloud
+   DNS lab zone with the same CAA outcome. No mid-state where cert
+   renewal fails.
+
+6. **DNSSEC.** Both Cloud DNS zones are unsigned today; CF defaults
+   to DNSSEC off for new zones. No chain to migrate.
+
+**What stays.** Every other part of this ADR is unaffected:
+split-horizon resolution via AdGuard Home, Path C per-device DNS
+configuration, the wildcard `Certificate` for `*.lab.jackhall.dev`,
+LAN IPs never published. The internal LAN-resolution mechanism does
+not depend on which DNS provider serves the apex.
+
+**What changes structurally.** The "Negative" consequence above —
+"GCP dependency" for cert issuance — is now joined by a new
+dependency on Cloudflare for apex resolution. The two surfaces are
+on two independent providers; loss of either degrades but does not
+disable the other (CF down means apex doesn't resolve and the lab
+subzone delegation can't be looked up, taking the lab surface with
+it; Cloud DNS down means the lab subzone records don't resolve even
+if CF is healthy). Mitigated by both providers being stable
+managed services with high SLAs and zero shared infrastructure.
+
+`terraform/gcp/` keeps the Cloud DNS lab zone and the cert-manager
+SA. The apex zone, apex CAA, and the apex NS delegation record for
+lab are kept in place during this PR's window as a dormant
+fallback. The follow-up issue
+[#146](https://github.com/RaptGroup/homelab/issues/146) destroys
+them once propagation has settled and cert-manager has renewed at
+least once through the new CAA-walk path.
+
+`terraform/cloudflare/` owns the CF apex zone's records: apex CAA
+(letsencrypt.org), lab NS delegation, the CAA exception at
+`projects.jackhall.dev`, and the wildcard CNAME for the preview-env
+tunnel. Records inside `lab.jackhall.dev` (the Cloud DNS subzone)
+stay in `terraform/gcp/` and remain managed via the cert-manager SA
+at runtime.

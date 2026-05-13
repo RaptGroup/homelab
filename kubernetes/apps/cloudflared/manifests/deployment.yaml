@@ -1,0 +1,109 @@
+# cloudflared — outbound Cloudflare Tunnel connector. Dials CF's edge
+# from inside the cluster over QUIC/UDP 7844; receives inbound HTTP for
+# *.projects.jackhall.dev (rules configured at the CF side by
+# terraform/cloudflare/) and forwards each request to the in-cluster
+# `projects` Cilium Gateway.
+#
+# Single replica is deliberate. Cloudflare Tunnel supports HA by running
+# multiple cloudflared connectors that share a tunnel ID — they
+# multiplex across CF edge POPs. For the homelab's single-operator,
+# tracer-bullet scope, one connector is fine; the preview-env surface is
+# already classified as non-critical (ADR-0006 "previews are by
+# definition non-critical and short-lived"). Bumping to 2+ replicas is a
+# one-line change when it's worth doing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+  labels:
+    app.kubernetes.io/name: cloudflared
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Maintain at least one active connector during a rollout. With
+      # replicas: 1, maxUnavailable: 0 means the new pod must be healthy
+      # before the old one terminates — no tunnel-disconnect blip.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudflared
+    spec:
+      # The tunnel only needs outbound UDP/7844 to *.argotunnel.com and
+      # DNS resolution. No inbound ports, no privileged caps, no host
+      # mounts. Drop everything by default.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          # Pin a major+minor; floating to :latest would make a tunnel
+          # protocol break debugging-by-bisect impossible. Bump
+          # deliberately.
+          image: cloudflare/cloudflared:2025.5.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            # --no-autoupdate: the image tag is the source of truth for
+            # the cloudflared version; in-container self-update would
+            # mutate the running binary out from under us and contradict
+            # the immutable-pod model.
+            - --no-autoupdate
+            # Expose Prometheus-format metrics on :2000/metrics for
+            # readiness probing and future Grafana/Hubble scraping.
+            - --metrics
+            - 0.0.0.0:2000
+            - --loglevel
+            - info
+            # `run` with no positional tunnel ID picks up the tunnel
+            # from $TUNNEL_TOKEN. The token is the per-tunnel connector
+            # credential; it identifies which tunnel this connector
+            # belongs to and authenticates the connection.
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflared-tunnel-token
+                  key: token
+          ports:
+            - name: metrics
+              containerPort: 2000
+              protocol: TCP
+          # /ready is cloudflared's built-in connector-health endpoint:
+          # 200 once at least one edge connection is established, 503
+          # otherwise. Failing readiness pulls the pod from the Service
+          # rotation (irrelevant at replicas: 1) and from rollout
+          # progress (relevant: a misconfigured token makes the rollout
+          # block instead of silently shipping a broken connector).
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -1,0 +1,44 @@
+# `projects` Gateway — the front door for public preview environments
+# (ADR-0006). Receives cleartext HTTP from cloudflared, which has already
+# terminated TLS at Cloudflare's edge. The hop from cloudflared to this
+# Gateway never crosses the LAN.
+#
+# Two structural properties are load-bearing:
+#
+# 1. `allowedRoutes.namespaces.from: Selector` with a namespaceSelector
+#    requiring `projects.jackhall.dev/enabled=true`. Only namespaces the
+#    preview-env wrapper creates carry the label; any HTTPRoute in any
+#    other namespace that tries to attach to this Gateway as a parentRef
+#    is refused by the API itself. The gate is structural — it doesn't
+#    rely on convention or out-of-band review.
+#
+# 2. No `lbipam.cilium.io/ips` annotation. The Gateway intentionally
+#    does not pin an LB-pool IP; cloudflared targets it via the
+#    Cilium-generated Service name (cilium-gateway-projects in
+#    gateway-system), routed inside the cluster via ClusterIP. See
+#    README "LAN reachability and the Cilium 1.16 constraint" for the
+#    real-world caveat — Cilium 1.16's Gateway controller currently
+#    forces type: LoadBalancer on the generated Service, so the
+#    Gateway will still receive an LB-pool IP from `lab-pool`.
+#    Realizing ADR-0006's "structurally LAN-impossible" property
+#    requires either a Cilium 1.18+ upgrade (CiliumGatewayClassConfig
+#    can scope the generated Service) or an L2-announcement-policy
+#    refinement; tracked as follow-up to this issue.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: projects
+  namespace: gateway-system
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http
+      hostname: "*.projects.jackhall.dev"
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              projects.jackhall.dev/enabled: "true"

@@ -44,19 +44,26 @@ resource "google_project_service" "enabled" {
   disable_on_destroy = false
 }
 
-# Apex `jackhall.dev` zone. Squarespace's nameserver field for the domain
-# already points at Cloud DNS (the lab subzone NS got applied at the apex
-# level when the user delegated), so the apex *has* to live in Cloud DNS
-# too — otherwise the assigned ns-cloud-* nameservers return REFUSED for
-# anything at the apex and Let's Encrypt's CAA walk SERVFAILs while
-# trying to issue `*.lab.jackhall.dev` (the walk goes
-# `*.lab.jackhall.dev` → `lab.jackhall.dev` → `jackhall.dev` → `dev`).
+# --- VESTIGIAL: Cloud DNS apex zone ----------------------------------------
 #
-# This zone holds only what the apex genuinely needs — an SOA/NS pair
-# (auto-managed by Cloud DNS), the explicit CAA permitting Let's Encrypt,
-# and an in-bailiwick NS record delegating `lab.jackhall.dev` to the
-# subzone below. No A/AAAA at the apex; the homelab does not host
-# anything at `jackhall.dev` itself.
+# As of 2026-05-12 (#145, ADR-0003 amendment) the apex `jackhall.dev` has
+# moved to Cloudflare. Squarespace's registrar nameservers no longer point
+# at Cloud DNS once that flip is complete; this zone and its records become
+# unreachable.
+#
+# The resources below stay in place as a **dormant fallback during
+# Squarespace propagation**. Both Cloud DNS and CF publish the same apex
+# CAA (`letsencrypt.org`) and the same lab NS delegation
+# (`ns-cloud-d{1,2,3,4}.googledomains.com.`), so any resolver hitting
+# either side mid-flip gets a consistent answer and cert-manager keeps
+# working. Issue #146 destroys this block once the migration is verified
+# stable (cert-manager has renewed at least once through the CF-apex CAA
+# walk, all public resolvers return CF NS for the apex).
+#
+# Until then, `tofu plan` should show **no diff** between TF and the live
+# Cloud DNS state — these resources are static historical artifacts, not
+# active configuration. If you find yourself wanting to edit them, you
+# probably want terraform/cloudflare/ instead.
 resource "google_dns_managed_zone" "apex" {
   project     = google_project.lab.project_id
   name        = var.apex_zone_name
@@ -99,6 +106,17 @@ resource "google_dns_record_set" "apex_lab_delegation" {
 
   rrdatas = google_dns_managed_zone.lab.name_servers
 }
+
+# NS delegation for the projects.jackhall.dev subzone deliberately does NOT
+# exist here. ADR-0006's original framing put `projects.*` in a separate
+# Cloudflare-managed subdomain zone NS-delegated from this apex; the
+# 2026-05-12 amendment (#145) puts those records as records inside the CF
+# apex zone instead — no separate subzone, no NS delegation needed at this
+# layer. terraform/cloudflare/ owns the projects.* records directly.
+#
+# This block is retained as a structural comment so a future reader who
+# expects the original ADR-0006 shape doesn't go looking for a missing
+# resource — the absence is intentional, not an oversight.
 
 # Public managed zone delegated from the apex via the NS record above.
 # cert-manager creates ACME TXT records here.
@@ -728,6 +746,70 @@ resource "google_secret_manager_secret" "cluster_pull_sa_key" {
     purpose  = "addon-credential"
     addon    = "ar-canary"
     rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+# --- Cloudflare Tunnel: public preview env path (ADR-0006) -----------------
+#
+# Two GSM containers back the `terraform/cloudflare/` root and the
+# in-cluster `cloudflared` addon. The shape mirrors every other addon
+# secret in this root: container TF-managed here, value uploaded out of
+# band — so the long-lived plaintext credential never round-trips
+# through TF state.
+#
+# cloudflare-api-token: the operator-minted Cloudflare API token used by
+# `terraform/cloudflare/` to authenticate. Scoped to Zone:Edit +
+# Tunnel:Edit + DNS:Edit on the projects zone only — wide enough for
+# the root to manage the tunnel, the wildcard CNAME, and the CAA
+# records, narrow enough that a leak doesn't reach the operator's
+# other zones. Bootstrap step: see `terraform/cloudflare/README.md`.
+#
+# Upload (one-time bootstrap):
+#
+#   echo -n '<cf-api-token>' \
+#     | gcloud secrets versions add cloudflare-api-token \
+#         --project rockingham-homelab --data-file=-
+#
+# cloudflare-tunnel-token: the per-tunnel connector token cloudflared
+# uses to authenticate to Cloudflare's edge. Unlike every other GSM
+# container in this root, this one's value is written *by Terraform*
+# (`terraform/cloudflare/` reads the token from the
+# cloudflare_zero_trust_tunnel_cloudflared_token data source and posts
+# it as a new secret version). The container is created here so the
+# cloudflared addon's ExternalSecret has a stable name to reference,
+# and so the `terraform/cloudflare/` root doesn't have to assume
+# create-permissions on the GSM API surface beyond writing versions.
+resource "google_secret_manager_secret" "cloudflare_api_token" {
+  project   = google_project.lab.project_id
+  secret_id = "cloudflare-api-token"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "cloudflared"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret" "cloudflare_tunnel_token" {
+  project   = google_project.lab.project_id
+  secret_id = "cloudflare-tunnel-token"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "cloudflared"
+    rotation = "terraform"
   }
 
   replication {

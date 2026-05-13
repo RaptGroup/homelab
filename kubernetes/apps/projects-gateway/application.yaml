@@ -1,0 +1,36 @@
+# `projects` Cilium Gateway — the second cluster Gateway, alongside `lab`,
+# for public preview environments (ADR-0006). Listener is HTTP on
+# *.projects.jackhall.dev:80; TLS terminates at Cloudflare's edge and
+# the in-cluster hop from cloudflared to this Gateway is cleartext
+# inside the tunnel.
+#
+# Single-source path-only Application — just the raw Gateway manifest
+# under manifests/. The gateway-system namespace is created by the
+# `lab-gateway` Application; we don't redeclare it here to keep
+# namespace ownership unambiguous.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: projects-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gateway-system
+  source:
+    repoURL: git@github.com:RaptGroup/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/projects-gateway/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      # CreateNamespace deliberately omitted — gateway-system is owned by
+      # the lab-gateway Application's namespace.yaml and we don't want two
+      # Applications to fight over the same Namespace resource.
+      - ApplyOutOfSyncOnly=true

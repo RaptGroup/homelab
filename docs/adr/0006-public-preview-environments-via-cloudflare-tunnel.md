@@ -1,6 +1,6 @@
 # ADR-0006: Public preview environments via Cloudflare Tunnel
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone))
 - **Date:** 2026-05-11
 
 ## Context
@@ -109,6 +109,13 @@ by the wrapper that creates the namespace.** Concretely:
    gets its **own CAA record** allowing Cloudflare's contracted CAs.
    The apex pin is unchanged; this is an explicit override scoped to
    the subzone only.
+
+   *(Amended 2026-05-12: CF's subdomain-zone path requires the parent
+   zone to be on CF authoritative DNS too, so the apex moves to CF
+   and `projects.*` lives as records inside the CF apex zone — not a
+   separate NS-delegated subdomain zone. See
+   [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone)
+   and ADR-0003's matching amendment.)*
 2. **Flat naming.** Preview hostnames follow
    `<svc>-<ns>.projects.jackhall.dev` — one label deep, with the
    namespace baked into the leftmost label by a `-` rather than a
@@ -354,3 +361,78 @@ that motivated public previews in the first place. Tailscale
 remains useful as a future, separate decision for operator remote
 access; it is not the right answer for "how do reviewers get to a
 preview?"
+
+## Amendment 2026-05-12 (records in apex zone, not a delegated subzone)
+
+The original Decision point 1 framed `projects.jackhall.dev` as a
+separate Cloudflare-managed subdomain zone NS-delegated from the
+Cloud DNS apex. Implementing that revealed a Cloudflare constraint:
+
+**CF's "Connect a domain" flow rejects subdomains, and the
+subdomain-zone path on every plan (Free, Pro, Business) requires the
+parent zone to be on Cloudflare authoritative DNS too.** The only
+path that keeps the apex elsewhere is CF Business plan's "Partial
+(CNAME) Setup" at \$200/mo — which inverts the cost-for-parity
+argument that ruled out the GCP-native alternative in the first
+place (the GCP path was rejected at \$25/mo + bastion ownership; CF
+Business is \$200/mo for less capability).
+
+The amended shape: **the apex `jackhall.dev` moves to Cloudflare,
+and `projects.*` records live as records inside the CF apex zone —
+no separate subdomain zone.** ADR-0003 carries the matching
+amendment for the apex move; this ADR's preview-surface shape is
+what changes here.
+
+1. **No subzone.** There is no `projects.jackhall.dev` zone as a
+   separate Cloudflare resource. The records that ADR-0006's
+   original framing put inside a subzone — CAA exception for CF's
+   contracted CAs, wildcard CNAME for the tunnel — are now
+   records at the `projects.jackhall.dev` *name* inside the CF
+   apex `jackhall.dev` zone. CF Universal SSL covers wildcards
+   under the apex, so issuance for `*.projects.jackhall.dev`
+   continues to work as ADR-0006 intended.
+
+2. **CAA exception.** The apex CAA in the CF apex zone is
+   `letsencrypt.org` (mirrors the old Cloud DNS apex, see ADR-0003's
+   amendment). A separate CAA at the `projects.jackhall.dev` name
+   inside that same zone allows `pki.goog` and `letsencrypt.org` —
+   CF's contracted CAs for Universal SSL issuance. The CAA walk
+   for `<preview>.projects.jackhall.dev` hits this `projects` CAA
+   record before reaching the apex CAA, so issuance is gated to
+   CF's contracted CAs for this surface only, exactly as the
+   original ADR intended.
+
+3. **No NS delegation for `projects`.** Without a separate subzone,
+   there is no NS delegation record to publish at the apex level
+   for `projects.jackhall.dev`. The TF resource that originally
+   represented that delegation (`apex_projects_delegation` in
+   `terraform/gcp/`) does not exist. `terraform/cloudflare/`
+   publishes records directly at `projects.*` names; resolution
+   resolves them within the same apex zone, no inter-zone hop.
+
+4. **Wildcard CNAME.** `*.projects.jackhall.dev → <tunnel-uuid>.cfargotunnel.com`,
+   `proxied = true`. Published as a record at the `*.projects`
+   name in the CF apex zone, not in a separate zone. CF terminates
+   TLS at the edge using the apex zone's Universal SSL wildcard
+   cert; the tunnel hop is cleartext HTTP from cloudflared to the
+   `projects` Gateway's ClusterIP, identical to the original ADR.
+
+5. **What stays.** The central `projects` Cilium Gateway,
+   namespace-selector gating on `projects.jackhall.dev/enabled=true`,
+   the in-cluster `cloudflared` Deployment, the per-namespace
+   hardening bundle (ResourceQuota + LimitRange +
+   CiliumNetworkPolicy + TTL annotation), the two-wrapper model,
+   and the deferred CF Access auth gate are **all unchanged**. The
+   amendment is scoped to the DNS structure only.
+
+**Two-provider split, revisited.** ADR-0006's original "Negative
+consequence" list called out a "two DNS providers in play: Cloud
+DNS for apex+lab, Cloudflare for projects." Post-amendment, the
+provider split is by **surface**, not by zone count: Cloud DNS
+serves the `lab.jackhall.dev` records (cert-manager continues to
+publish ACME TXT records there), CF serves the apex zone (which
+contains both the lab NS delegation and the projects.* records).
+Operationally identical — the operator still has to remember
+which provider holds which records — but cleaner in TF state
+shape: one zone per provider rather than two zones split across
+providers.
