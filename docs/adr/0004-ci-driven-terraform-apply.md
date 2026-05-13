@@ -1,6 +1,6 @@
 # ADR-0004: CI-driven `terraform/gcp/` apply, env-gated and WIF-scoped
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-05-13 — generalised pattern to `terraform/cloudflare/`)
 - **Date:** 2026-05-10
 
 ## Context
@@ -199,3 +199,60 @@ required reviewers fires when the workflow asks for the credentials,
 not when the PR is reviewed; a PR can be reviewed and merged on
 Friday and the apply held until Monday with no further code change.
 That decoupling is the point.
+
+## Amendment — 2026-05-13: generalised to `terraform/cloudflare/`
+
+The original ADR scoped the pattern to `terraform/gcp/`. Per #131,
+the same shape is now applied to `terraform/cloudflare/` (added in
+#126), with one variation worth recording:
+
+**The `cloudflare` apply SA is not `roles/owner`.** The gcp root
+legitimately creates and destroys everything in the project, so
+`roles/owner` on `tf-ci-apply` was the only role that didn't either
+miss something or split coverage across so many bindings that the
+boundary stopped being meaningful. The cloudflare root's GCP-side
+surface is much smaller — two GSM bindings (`secretAccessor` on
+`cloudflare-api-token`, `secretVersionAdder` on
+`cloudflare-tunnel-token`) plus state I/O against the tfstate
+bucket — so `tf-ci-apply-cloudflare` holds exactly that and nothing
+else. `roles/owner` here would re-create `tf-ci-apply`'s blast
+radius for no functional gain.
+
+The rest of the pattern is unchanged:
+
+- Same env-scoped WIF binding shape (`attribute.environment/cloudflare`),
+  reusing the existing `github` provider's repo lock; combined gate
+  is equivalent to `repo:RaptGroup/homelab:environment:cloudflare`.
+- Same plan/apply split: `tf-ci-plan` runs the plan (widened with a
+  per-secret `secretAccessor` on `cloudflare-api-token` so the
+  Cloudflare provider can be instantiated at plan time), and the
+  apply job re-auths as `tf-ci-apply-cloudflare`.
+- Same `apply tfplan` artifact handoff — bytes applied are bytes
+  reviewed.
+- Same `cloudflare` GitHub deployment environment with deployment-
+  branch restriction = `main` and required reviewer = repo owner,
+  created manually in the UI in parallel to `gcp`.
+- Same matrix-based `terraform-plan.yml` for PR plans across all
+  roots; new per-root `terraform-apply-cloudflare.yml` mirrors the
+  `terraform-apply.yml` shape (one apply workflow per root, keyed to
+  its own deployment environment).
+
+**Most of the cloudflare apply boundary is Cloudflare-side.** The CF
+API token is scoped at mint time to specific permissions on a single
+zone + the account's Tunnel API; narrowing the apply surface happens
+there, not in the GCP SA. The GSM container holds the operator-minted
+token; rotation is a re-mint + a `gcloud secrets versions add`, never
+a TF state mutation.
+
+**Bootstrap order grows one step per added root.** Provisioning the
+`tf-ci-apply-cloudflare` SA, its env-scoped WIF binding, its three
+IAM bindings, and the `GCP_APPLY_SA_CLOUDFLARE` repo variable is a
+one-time operator action documented in `terraform/gcp/README.md`.
+The `cloudflare` environment in the GitHub UI is the only piece TF
+cannot codify, identical to the situation for `gcp`.
+
+The original ADR's negative consequence about per-root tax is now
+observable: two SAs become three, the bootstrap checklist grows, and
+the GitHub environments list grows. The pattern is regular, the tax
+is real, and at three roots the regularity is more valuable than the
+tax is painful.

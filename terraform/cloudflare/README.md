@@ -233,25 +233,71 @@ force-sync=$(date +%s) --overwrite`).
 
 ## CI
 
-This root is **not** wired into the `terraform-plan.yml` /
-`terraform-apply.yml` workflows yet — those only run for `gcp` and
-`bootstrap` (see `terraform-plan.yml` → `candidates=(gcp bootstrap)`).
-Adding `cloudflare` to that list is the work tracked in
-[#131](https://github.com/RaptGroup/homelab/issues/131); for the
-tracer-bullet PR it's operator-applied so the bootstrap order
-(gcp → cloudflare → Squarespace flip) stays a manual ceremony rather
-than a CI dance.
+This root is wired into CI per [#131](https://github.com/RaptGroup/homelab/issues/131)
+and the ADR-0004 amendment (2026-05-13). Two workflow paths:
 
-The CI path will need:
+- **Plan on PR.** `.github/workflows/terraform-plan.yml` is matrix-
+  based across all three roots; a PR that touches
+  `terraform/cloudflare/**` produces a sticky PR comment with the
+  CF-root plan output, alongside any gcp/bootstrap plans for the
+  same PR. Plan runs as `tf-ci-plan`, widened with a per-secret
+  `roles/secretmanager.secretAccessor` on `cloudflare-api-token`
+  so the Cloudflare provider can be instantiated at plan time.
+- **Apply on merge to main.** `.github/workflows/terraform-apply-cloudflare.yml`
+  fires on `push: main` with path filter on
+  `terraform/cloudflare/**`. The `apply` job declares
+  `environment: cloudflare` and runs as `tf-ci-apply-cloudflare` —
+  a dedicated SA with narrow secret-scoped + bucket-scoped GCP
+  permissions (no `roles/owner`). GitHub holds the job in
+  `Waiting` until the repo owner approves the deployment in the
+  UI. Same `apply tfplan` artifact handoff as gcp's apply
+  workflow, so the bytes applied are the bytes reviewed.
 
-- An additional CI service account (or the apply SA's roles widened)
-  with `roles/secretmanager.secretAccessor` on `cloudflare-api-token`
-  and `roles/secretmanager.secretVersionAdder` on
-  `cloudflare-tunnel-token` — the GSM access pattern is asymmetric
-  for this root.
-- A `terraform-apply-cloudflare.yml` workflow paired with a
-  `cloudflare` GitHub deployment environment, mirroring the gcp
-  shape from ADR-0004.
+The bootstrap order is unchanged from the tracer-bullet shape:
+operator runs `tofu apply` locally once to land the CF apex zone
+records, then flips Squarespace's nameservers. Subsequent applies
+go through CI.
+
+### CI repository configuration
+
+Beyond the gcp-root variables and secret (see `terraform/gcp/README.md`),
+the cloudflare CI path needs:
+
+| Setting                       | Type     | Value                                                                       |
+|-------------------------------|----------|-----------------------------------------------------------------------------|
+| `GCP_APPLY_SA_CLOUDFLARE`     | Variable | `tofu -chdir=terraform/gcp output -raw ci_apply_cloudflare_service_account_email` |
+| `CLOUDFLARE_ACCOUNT_ID`       | Variable | Same value as `terraform.tfvars` here (not sensitive — public ID)           |
+
+And the **`cloudflare` deployment environment** in the GitHub UI
+(Settings → Environments → New environment, name `cloudflare`):
+
+- Deployment branch restriction: `Selected branches and tags` → add `main`.
+- Required reviewer: repo owner.
+
+Without the environment, the apply job queues indefinitely. Without
+the deployment-branch rule, a workflow run on a feature branch
+could attempt to opt into the environment.
+
+### Bootstrap: enabling CI apply on a fresh project
+
+`tf-ci-apply-cloudflare` is provisioned by `terraform/gcp/`, so the
+first CI-ready apply requires those bindings to be live first:
+
+1. Operator runs `tofu apply` against `terraform/gcp/` (locally or
+   via the gcp apply workflow) — this creates the
+   `tf-ci-apply-cloudflare` SA, its three IAM bindings, and the
+   env-scoped WIF binding keyed on `attribute.environment/cloudflare`.
+2. Operator copies the new output value into the GitHub repo
+   variable: `GCP_APPLY_SA_CLOUDFLARE = $(tofu -chdir=terraform/gcp output -raw ci_apply_cloudflare_service_account_email)`.
+3. Operator sets the `CLOUDFLARE_ACCOUNT_ID` repo variable to the
+   same value as `terraform.tfvars` here.
+4. Operator creates the `cloudflare` GitHub deployment environment
+   in the UI with the protection rules above.
+5. From this point on, merging a PR that touches
+   `terraform/cloudflare/**` triggers
+   `terraform-apply-cloudflare.yml`: it re-plans against current
+   state, surfaces the diff in the job log, pauses for environment
+   approval if there is a diff, and applies the approved plan.
 
 ## Teardown
 

@@ -157,31 +157,42 @@ Federation — no JSON keys. This root creates the federation:
   that rejects any token whose `repository` claim isn't
   `var.github_repository`. A leaked OIDC token from another repo
   cannot reach this project.
-- Two CI service accounts:
+- Three CI service accounts — one plan SA shared across all roots,
+  one apply SA per Terraform root that has a CI apply path:
 
-  | Service account            | Project role  | Used by                    | Impersonable from                                                                      |
-  |----------------------------|---------------|----------------------------|----------------------------------------------------------------------------------------|
-  | `tf-ci-plan` (default ID)  | `roles/viewer`| `terraform-plan.yml`       | Any workflow job in `var.github_repository`                                            |
-  | `tf-ci-apply` (default ID) | `roles/owner` | `terraform-apply.yml`      | Only jobs that declare `environment: gcp` (env-scoped WIF binding; see ADR-0004)       |
+  | Service account                       | GCP permissions                                                                                                                                                | Used by                                  | Impersonable from                                                                            |
+  |---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------|----------------------------------------------------------------------------------------------|
+  | `tf-ci-plan` (default ID)             | `roles/viewer` (project) + `roles/secretmanager.secretAccessor` (per-secret on `cloudflare-api-token`)                                                         | `terraform-plan.yml`, `plan` of both apply workflows | Any workflow job in `var.github_repository`                                                  |
+  | `tf-ci-apply` (default ID)            | `roles/owner` (project)                                                                                                                                        | `apply` of `terraform-apply.yml`         | Only jobs that declare `environment: gcp` (env-scoped WIF binding; see ADR-0004)             |
+  | `tf-ci-apply-cloudflare` (default ID) | `roles/secretmanager.secretAccessor` on `cloudflare-api-token` + `roles/secretmanager.secretVersionAdder` on `cloudflare-tunnel-token` + `roles/storage.objectUser` (tfstate bucket) | `apply` of `terraform-apply-cloudflare.yml` | Only jobs that declare `environment: cloudflare` (env-scoped WIF binding; see ADR-0004 amendment) |
 
   The plan SA is structurally insufficient to mutate anything; the
-  apply SA can mutate everything but is reachable only from a job
-  that opts into the `gcp` GitHub deployment environment. The provider
-  attribute mapping exposes both `attribute.repository` and
-  `attribute.environment`; the apply SA's `roles/iam.workloadIdentityUser`
-  binding keys on `principalSet://…/attribute.environment/gcp` so the
-  combined gate is equivalent to
-  `repo:RaptGroup/homelab:environment:gcp`.
+  apply SAs are each reachable only from a job that opts into the
+  matching GitHub deployment environment. The provider attribute
+  mapping exposes both `attribute.repository` and `attribute.environment`;
+  each apply SA's `roles/iam.workloadIdentityUser` binding keys on
+  `principalSet://…/attribute.environment/<root>` so the combined
+  gate is equivalent to `repo:RaptGroup/homelab:environment:<root>`.
+
+  The cloudflare apply SA is deliberately not `roles/owner`. The
+  cloudflare root's GCP-side surface is two GSM bindings plus state
+  I/O, so the narrow per-secret + bucket-scoped permissions above
+  cover everything `tofu apply` legitimately does there. Most of the
+  apply boundary for that root is Cloudflare-side and lives in the
+  scoping of the CF API token at mint time — see
+  `terraform/cloudflare/README.md`.
 
 After the first apply, wire both workflows up by setting these GitHub
 **Actions repository variables** (Settings → Secrets and variables →
 Actions → Variables) to the values printed by `tofu output`:
 
-| Repository variable | Value                                                    |
-|---------------------|----------------------------------------------------------|
-| `GCP_WIF_PROVIDER`  | `tofu output -raw ci_workload_identity_provider`         |
-| `GCP_CI_SA`         | `tofu output -raw ci_service_account_email`              |
-| `GCP_APPLY_SA`      | `tofu output -raw ci_apply_service_account_email`        |
+| Repository variable        | Value                                                          |
+|----------------------------|----------------------------------------------------------------|
+| `GCP_WIF_PROVIDER`         | `tofu output -raw ci_workload_identity_provider`               |
+| `GCP_CI_SA`                | `tofu output -raw ci_service_account_email`                    |
+| `GCP_APPLY_SA`             | `tofu output -raw ci_apply_service_account_email`              |
+| `GCP_APPLY_SA_CLOUDFLARE`  | `tofu output -raw ci_apply_cloudflare_service_account_email`   |
+| `CLOUDFLARE_ACCOUNT_ID`    | Same value as `terraform/cloudflare/terraform.tfvars` (public ID, not sensitive) |
 
 And one **Actions secret**, so `terraform plan`/`apply` can satisfy
 the `billing_account` variable in CI without a tracked tfvars file:
@@ -206,7 +217,15 @@ environment that doesn't exist. Without the deployment-branch rule,
 a workflow run on a feature branch could attempt to opt into the
 environment.
 
-Until the four repo values above are set, both workflows fail loudly
+The same shape is mirrored for `terraform/cloudflare/`: create a
+**`cloudflare` deployment environment** with the same protection rules
+(branch = `main`, required reviewer = repo owner). The cloudflare
+apply workflow declares `environment: cloudflare`, and the WIF
+binding on `tf-ci-apply-cloudflare` keys on the matching
+`attribute.environment` value. See `terraform/cloudflare/README.md`
+for the cloudflare-specific bootstrap checklist.
+
+Until the repo values above are set, both apply workflows fail loudly
 at their first step with an error message pointing here — chosen
 over a silent skip so a missing wire-up surfaces in the PR check
 rather than hiding. For `terraform-plan.yml`, `fmt` and change

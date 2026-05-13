@@ -1,0 +1,197 @@
+name: Terraform apply (cloudflare)
+
+# Per-root apply workflow. Mirrors the shape of terraform-apply.yml
+# (the gcp root's apply) — same plan-then-env-gated-apply flow, same
+# WIF auth pattern, same `apply tfplan` handoff to keep the bytes
+# applied identical to the bytes reviewed. The differences are all in
+# the SA wiring: the cloudflare apply SA holds narrow secret-scoped +
+# bucket-scoped permissions instead of project-wide roles/owner (the
+# root's GCP surface is two GSM bindings + state I/O), and the env
+# gate is `cloudflare` instead of `gcp`. See ADR-0004.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Path filter intentionally narrow: only TF root changes or edits
+    # to this workflow itself trigger an auto-apply. Touching unrelated
+    # paths does not run a plan. The env gate still holds the apply
+    # step for operator approval if the plan shows a diff; a no-diff
+    # plan skips apply silently.
+    paths:
+      - 'terraform/cloudflare/**'
+      - '.github/workflows/terraform-apply-cloudflare.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # Never cancel an in-flight apply: a half-applied state is worse
+  # than a queued second run. Same group naming convention as the
+  # gcp apply workflow.
+  group: terraform-apply-cloudflare
+  cancel-in-progress: false
+
+env:
+  TOFU_VERSION: "1.8.5"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Same fail-loud pattern as terraform-plan.yml / terraform-apply.yml.
+      # Adds GCP_APPLY_SA_CLOUDFLARE and CLOUDFLARE_ACCOUNT_ID on top of
+      # the plan workflow's three required values.
+      - name: Verify CI configuration
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          CI_SA: ${{ vars.GCP_CI_SA }}
+          APPLY_SA_CLOUDFLARE: ${{ vars.GCP_APPLY_SA_CLOUDFLARE }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "${WIF_PROVIDER}" ]]         && missing+=("variable GCP_WIF_PROVIDER")
+          [[ -z "${CI_SA}" ]]                && missing+=("variable GCP_CI_SA")
+          [[ -z "${APPLY_SA_CLOUDFLARE}" ]]  && missing+=("variable GCP_APPLY_SA_CLOUDFLARE")
+          [[ -z "${CLOUDFLARE_ACCOUNT_ID}" ]] && missing+=("variable CLOUDFLARE_ACCOUNT_ID")
+
+          if (( ${#missing[@]} > 0 )); then
+            {
+              echo "::error::Terraform apply (cloudflare) workflow is not wired up. Missing: ${missing[*]}"
+              echo
+              echo "Get the values:"
+              echo "  cd terraform/gcp"
+              echo "  tofu output -raw ci_workload_identity_provider              # GCP_WIF_PROVIDER"
+              echo "  tofu output -raw ci_service_account_email                   # GCP_CI_SA"
+              echo "  tofu output -raw ci_apply_cloudflare_service_account_email  # GCP_APPLY_SA_CLOUDFLARE"
+              echo
+              echo "Then set them in GitHub: Settings → Secrets and variables → Actions"
+              echo "  Variables tab: GCP_WIF_PROVIDER, GCP_CI_SA, GCP_APPLY_SA_CLOUDFLARE,"
+              echo "                 CLOUDFLARE_ACCOUNT_ID"
+              echo
+              echo "Also create the \`cloudflare\` deployment environment in the GitHub"
+              echo "UI: Settings → Environments → New environment. Configure with"
+              echo "deployment-branch restriction = main, required reviewer = repo owner."
+              echo
+              echo "See terraform/gcp/README.md, section \"CI: GitHub Actions auth\","
+              echo "and terraform/cloudflare/README.md, section \"CI\"."
+            } >&2
+            exit 1
+          fi
+
+      # Plan runs as the viewer-only SA (widened with secretAccessor on
+      # cloudflare-api-token via terraform/gcp/main.tf). The apply job
+      # re-auths as the cloudflare apply SA — separating the two means
+      # a token compromised mid-plan cannot apply.
+      - name: Authenticate to GCP via WIF (plan SA, viewer + cloudflare-api-token read)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@fc711fa910b93cba0f3fbecaafc9f42fd0c411cb # v2.0.0
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      - name: tofu init
+        working-directory: terraform/cloudflare
+        run: tofu init -input=false -lockfile=readonly
+
+      - name: tofu plan
+        id: plan
+        working-directory: terraform/cloudflare
+        env:
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          # -lock=false because the plan SA holds project-wide
+          # roles/viewer; it cannot write the .tflock object the GCS
+          # backend uses for state locking. Same workaround as
+          # terraform-plan.yml and terraform-apply.yml (gcp). The apply
+          # job below keeps locking enabled (the cloudflare apply SA
+          # has bucket-level objectUser and can write the lock object)
+          # so concurrent applies are still serialized.
+          tofu plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan
+          rc=$?
+          set -e
+
+          # Detailed exit codes:
+          #   0 = no changes (apply job is skipped)
+          #   1 = error
+          #   2 = changes present (apply job runs after env approval)
+          if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+            echo "::error::tofu plan failed with exit code $rc"
+            exit $rc
+          fi
+
+          echo "exitcode=$rc" >> "$GITHUB_OUTPUT"
+          case "$rc" in
+            0) echo "No changes. Apply job will be skipped." ;;
+            2) echo "Changes detected. Apply job is gated on \`cloudflare\` environment approval." ;;
+          esac
+
+      # Hand the plan binary off to the apply job. Re-using the binary
+      # (rather than re-planning in apply) is the only way `apply tfplan`
+      # can guarantee it applies exactly what the operator approved; a
+      # second plan could legitimately diff against the first if state
+      # changed in between.
+      - name: Upload tfplan artifact
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tfplan-cloudflare
+          path: terraform/cloudflare/tfplan
+          if-no-files-found: error
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: needs.plan.outputs.exitcode == '2'
+    runs-on: ubuntu-latest
+    # The env gate fires here. GitHub holds this job in a "Waiting"
+    # state until a configured reviewer approves the deployment in the
+    # UI; the WIF binding on tf-ci-apply-cloudflare also keys on this
+    # exact environment name, so jobs that omit `environment: cloudflare`
+    # cannot mint an apply token even if they bypass the plan job.
+    environment: cloudflare
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Authenticate to GCP via WIF (apply SA, narrow secret + bucket scope)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_APPLY_SA_CLOUDFLARE }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@fc711fa910b93cba0f3fbecaafc9f42fd0c411cb # v2.0.0
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+
+      # Re-init to materialize providers under .terraform/ for this
+      # runner. Lockfile is read-only so providers must match what the
+      # plan job resolved.
+      - name: tofu init
+        working-directory: terraform/cloudflare
+        run: tofu init -input=false -lockfile=readonly
+
+      - name: Download tfplan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tfplan-cloudflare
+          path: terraform/cloudflare
+
+      - name: tofu apply
+        working-directory: terraform/cloudflare
+        env:
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: tofu apply -input=false -no-color tfplan

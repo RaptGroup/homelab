@@ -88,6 +88,11 @@ output "ci_apply_service_account_email" {
   value       = google_service_account.tf_ci_apply.email
 }
 
+output "ci_apply_cloudflare_service_account_email" {
+  description = "Email of the cloudflare-root apply CI service account (narrow secret-scoped + bucket-scoped, env-scoped WIF on `cloudflare`). Set this as the GCP_APPLY_SA_CLOUDFLARE repository variable in GitHub Actions."
+  value       = google_service_account.tf_ci_apply_cloudflare.email
+}
+
 output "artifact_registry_repository_url" {
   description = "Hostname-qualified URL of the preview-env Artifact Registry repository, used as the image-path prefix from both ARC pushes and cluster pulls. Full image paths look like `<this>/<workload>:<tag>`."
   value       = "${google_artifact_registry_repository.projects.location}-docker.pkg.dev/${google_project.lab.project_id}/${google_artifact_registry_repository.projects.repository_id}"

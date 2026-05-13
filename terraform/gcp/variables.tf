@@ -111,6 +111,18 @@ variable "ci_apply_environment" {
   default     = "gcp"
 }
 
+variable "tf_ci_apply_cloudflare_sa_id" {
+  description = "Service account ID (the part before @) for the apply CI service account used by the terraform-apply-cloudflare workflow. Narrow secret-scoped + bucket-scoped permissions rather than the project-wide roles/owner that tf-ci-apply carries, because terraform/cloudflare/'s GCP-side surface is just two GSM bindings + state I/O. Only impersonable from a workflow job that declares `environment: cloudflare`."
+  type        = string
+  default     = "tf-ci-apply-cloudflare"
+}
+
+variable "ci_apply_cloudflare_environment" {
+  description = "GitHub deployment environment name that gates impersonation of the cloudflare apply SA. Parallel to var.ci_apply_environment, keyed on the second Terraform root. Convention again: environment names mirror Terraform root names (cloudflare ↔ terraform/cloudflare/)."
+  type        = string
+  default     = "cloudflare"
+}
+
 variable "artifact_registry_region" {
   description = "Regional location for the Artifact Registry repository. us-east4 (Ashburn, VA) is geographically closest to the Rockingham homelab — image push from GitHub-hosted runners on the east coast and image pull from the homelab both win on latency vs. the us-central1 default used elsewhere in this root."
   type        = string
