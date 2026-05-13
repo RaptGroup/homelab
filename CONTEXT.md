@@ -78,16 +78,24 @@ Same names, different answers. See ADR-0003.
 The name space used for **public preview environments** of PR / branch
 builds (`<svc>-<ns>.projects.jackhall.dev`). **Not a separate DNS
 zone** — `projects.*` records live as records inside the CF-managed
-apex zone (`jackhall.dev`). Cloudflare's Universal SSL covers
-wildcards under the apex, so `*.projects.jackhall.dev` is auto-issued
-by CF's contracted CAs against the CAA exception published at the
-`projects.jackhall.dev` name inside the apex zone.
+apex zone (`jackhall.dev`). Universal SSL on the Free plan would only
+cover the depth-1 `*.jackhall.dev` wildcard, which the CA/B Forum's
+nested-wildcard prohibition stops from covering two-label preview
+names. TLS at the edge is therefore served by an **ACM-issued
+advanced wildcard cert** explicitly listing `projects.jackhall.dev` +
+`*.projects.jackhall.dev` in its SAN, issued by Google Trust Services
+against the CAA exception published at the `projects.jackhall.dev`
+name. Costs $10/mo; see ADR-0006's 2026-05-13 amendment.
 
 Records at the `projects.jackhall.dev` and `*.projects.jackhall.dev`
 names within the CF apex zone (managed by `terraform/cloudflare/`):
 - CAA at `projects.jackhall.dev`: `pki.goog` and `letsencrypt.org`
   (`issue` + `issuewild`). Overrides the apex `letsencrypt.org`
   pin for this name and everything below it.
+- ACM advanced certificate pack with hosts
+  `projects.jackhall.dev` + `*.projects.jackhall.dev`, Google CA,
+  DNS-01 validation auto-served by CF inside the same apex zone,
+  90-day validity, CF-auto-renewed.
 - Wildcard CNAME at `*.projects.jackhall.dev`:
   `<tunnel-uuid>.cfargotunnel.com`, proxied.
 
@@ -100,9 +108,9 @@ Distinct from `lab.jackhall.dev` on every axis worth tracking:
   `projects` records live in Cloudflare (within the CF apex zone).
 - **Cert chain.** `lab` uses a Let's Encrypt wildcard issued by
   cert-manager via DNS-01 against Cloud DNS, gated by the CF apex
-  `letsencrypt.org` CAA. `projects` uses Cloudflare's edge
-  wildcard, issued by CF's contracted CAs, gated by the explicit
-  CAA exception at the `projects.jackhall.dev` name.
+  `letsencrypt.org` CAA. `projects` uses a CF ACM-issued advanced
+  wildcard (Google Trust Services, two-host SAN), gated by the
+  explicit CAA exception at the `projects.jackhall.dev` name.
 - **Front door.** `lab` is reached via the `lab` Cilium Gateway at
   `192.168.1.201` on the LAN. `projects` is reached via Cloudflare
   Tunnel → `cloudflared` → the `projects` Cilium Gateway's

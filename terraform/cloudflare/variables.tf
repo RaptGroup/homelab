@@ -16,7 +16,7 @@ variable "apex_caa_issuers" {
 }
 
 variable "projects_caa_issuers" {
-  description = "CA hostnames allowed to issue certificates for projects.jackhall.dev and below. Published as a CAA record at the projects.jackhall.dev name inside the CF apex zone; overrides the apex letsencrypt.org pin for this name only (ADR-0006). Cloudflare's contracted CAs are pki.goog (Google Trust Services / DigiCert) and letsencrypt.org; Universal SSL needs at least one of them allowed."
+  description = "CA hostnames allowed to issue certificates for projects.jackhall.dev and below. Published as a CAA record at the projects.jackhall.dev name inside the CF apex zone; overrides the apex letsencrypt.org pin for this name only (ADR-0006). Cloudflare's contracted CAs are pki.goog (Google Trust Services / DigiCert) and letsencrypt.org; the ACM-issued projects wildcard (cloudflare_certificate_pack.projects_wildcard, certificate_authority = \"google\") needs pki.goog allowed here."
   type        = list(string)
   default     = ["pki.goog", "letsencrypt.org"]
 }

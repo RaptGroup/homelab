@@ -1,6 +1,6 @@
 # ADR-0006: Public preview environments via Cloudflare Tunnel
 
-- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone))
+- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone)) and 2026-05-13 (see [Amendment](#amendment-2026-05-13-cost-10mo-for-wildcard-cert))
 - **Date:** 2026-05-11
 
 ## Context
@@ -436,3 +436,91 @@ Operationally identical — the operator still has to remember
 which provider holds which records — but cleaner in TF state
 shape: one zone per provider rather than two zones split across
 providers.
+
+## Amendment 2026-05-13 (cost: $10/mo for wildcard cert)
+
+The 2026-05-12 amendment moved `projects.*` records into the CF apex
+zone and asserted, in passing, that "CF Universal SSL covers wildcards
+under the apex, so issuance for `*.projects.jackhall.dev` continues to
+work as ADR-0006 intended." The implementation pass against #126's
+tracer-bullet (PR #143) demonstrated end-to-end **HTTP** delivery —
+operator → CF Anycast → tunnel → cloudflared → projects Gateway →
+nginx Pod returns 200 — but **HTTPS to the same hostname failed at
+CF's edge** with `alert handshake failure` before reaching cloudflared
+at all.
+
+**Root cause.** CF Universal SSL on the Free plan covers depth-1 names
+only: `<apex>` and `*.<apex>`. The CA/Browser Forum's nested-wildcard
+prohibition means `*.jackhall.dev` does **not** cover
+`<anything>.<anything>.jackhall.dev`. Our preview hostnames are
+`<svc>-<ns>.projects.jackhall.dev` — two labels deep — so Universal
+SSL has no cert that can serve them and CF rejects the TLS handshake
+at the edge. The 2026-05-12 amendment's claim that wildcards "under
+the apex" issue automatically was correct for the *one*-label case
+(`*.jackhall.dev`) but wrong for the two-label case this surface
+actually uses.
+
+**Three options were enumerated:**
+
+| | Cost | URL pattern | Code/ADR delta |
+|---|---|---|---|
+| **A. Activate ACM, order wildcard** | $10/mo | unchanged | small TF + ADR amendment |
+| B. Drop `.projects.` infix | $0 | every preview URL changes | meaningful; abandons projects-as-namespace identity |
+| C. Per-host DNS records | $0 | every preview URL changes | wrapper does CF API calls per preview-up; more operational complexity |
+
+**Decision: Option A — activate ACM and order an advanced wildcard.**
+
+- **B** rejected: the `<svc>-<ns>.projects.jackhall.dev` shape is the
+  whole point of this ADR's flat-naming decision. Dropping the
+  `.projects.` infix and using `<svc>-<ns>.jackhall.dev` would put
+  preview hostnames on the apex alongside `lab.jackhall.dev` and
+  whatever the operator might publish at apex in future, collapsing
+  the "previews are a separate surface" property that ADR-0006 spent
+  five pages building.
+- **C** rejected: per-host DNS records means the wrapper does a CF
+  API call on every `preview-up` to publish (and on every
+  `preview-down` to clean up) a CNAME plus a per-host cert. The
+  wrapper's contract today is `kubectl apply` against a templated
+  bundle; bolting on per-preview-CF-API-state crosses an operational
+  boundary the wrapper-applied-not-controller-managed choice in this
+  ADR was specifically designed to avoid.
+- **A** accepted: $10/mo for the ACM pack, no wrapper changes, no URL
+  changes. Math still favours this over the GCP-native alternative
+  ADR-0006 originally rejected — **$10/mo (ACM) ≪ ~$25/mo (GCLB +
+  bastion) + bastion ownership**. The "no third party in request
+  path" property remains the GCP path's only unique capability, and
+  it remains insufficient on its own to flip the decision.
+
+**Implementation.** `terraform/cloudflare/main.tf` adds a
+`cloudflare_certificate_pack.projects_wildcard` resource:
+`type = "advanced"`, `hosts = ["projects.jackhall.dev",
+"*.projects.jackhall.dev"]`, `validation_method = "txt"`,
+`validity_days = 90`, `certificate_authority = "google"`. DNS-01
+validation is auto-served by CF inside the apex zone (which CF owns),
+so no operator interaction is needed for validation or renewal. The
+Google CA matches the `pki.goog` entry in the existing projects CAA
+exception; `lets_encrypt` would also satisfy CAA but Google is CF's
+default for ACM and issues faster.
+
+**Token permission widening (prereq).** The CF API token in GSM
+(`cloudflare-api-token`) was scoped to `Zone: Edit` + `DNS: Edit`
+under the zone policy. `cloudflare_certificate_pack` calls the
+certificate-pack API surface, which requires the **`SSL and
+Certificates`** permission group — separate from `Zone` and `DNS`.
+The operator widens the existing token in-place (no rotation; token
+value unchanged) before `tofu apply`. Final zone-scope permissions:
+`Zone: Edit`, `DNS: Edit`, `SSL and Certificates: Edit`.
+
+**Steady-state cost update.** ADR-0006's original Consequences list
+asserted "Steady-state cost is $0." That is downgraded to **$10/mo
+for ACM**, $0 for tunnel + DNS — total $10/mo. Still less than half
+the GCP-bastion alternative rejected upstream, no bastion to own, and
+the operational shape (one Helm release + one Terraform-managed
+resource) is unchanged.
+
+**What stays.** Every shape decision in the original ADR and the
+2026-05-12 amendment is unchanged: flat `<svc>-<ns>` naming, the
+central `projects` Gateway with namespaceSelector gating, the
+in-cluster `cloudflared` Deployment, the per-namespace hardening
+bundle, the two-wrapper model, deferred CF Access. Only the
+edge-cert provenance changes: Universal SSL → ACM-issued wildcard.

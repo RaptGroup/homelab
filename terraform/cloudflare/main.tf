@@ -13,8 +13,14 @@
 #     `lab.jackhall.dev` zone exactly where it was (Cloud DNS), reached
 #     via inter-provider NS delegation from this CF apex.
 #   - CAA exception at `projects.jackhall.dev` allowing pki.goog +
-#     letsencrypt.org — Cloudflare's contracted CAs for Universal SSL
-#     issuance on the public preview surface.
+#     letsencrypt.org — Cloudflare's contracted CAs for issuance on the
+#     public preview surface.
+#   - ACM-issued advanced edge certificate covering
+#     `projects.jackhall.dev` + `*.projects.jackhall.dev`. CF Universal
+#     SSL (free) only covers depth-1 names (apex + `*.<apex>`) and the
+#     CA/B Forum prohibits nested wildcards, so two-label hostnames like
+#     `<svc>-<ns>.projects.jackhall.dev` require an Advanced Certificate
+#     Manager pack ($10/mo). See ADR-0006's 2026-05-13 amendment.
 #   - The named Cloudflare Tunnel (`rockingham-projects`) with
 #     `config_src = "cloudflare"` — ingress rules managed via the CF
 #     API (this root), not via a config file on the cloudflared pod.
@@ -22,7 +28,8 @@
 #     `*.projects.jackhall.dev` to the `projects` Cilium Gateway's
 #     ClusterIP-resolved Service in-cluster; fallback 404.
 #   - Wildcard CNAME `*.projects.jackhall.dev → <tunnel-id>.cfargotunnel.com`
-#     proxied through CF's edge for Universal SSL termination.
+#     proxied through CF's edge; TLS terminates at the ACM-issued
+#     wildcard cert above.
 #   - GSM version write of the per-tunnel connector token so the
 #     in-cluster `cloudflared` addon's ExternalSecret can sync it.
 #
@@ -113,12 +120,15 @@ resource "cloudflare_dns_record" "lab_delegation" {
 
 # --- Projects CAA exception: CF's contracted CAs ----------------------------
 #
-# Without this, CF's Universal SSL issuance for `*.projects.jackhall.dev`
-# would walk up to the apex CAA (`letsencrypt.org`), hit the
-# `issuewild letsencrypt.org` pin, and fail to issue via Google Trust
-# Services. Publishing CAA at `projects.jackhall.dev` overrides the walk
-# for `projects.*` and below; the apex pin still applies to
-# `*.lab.jackhall.dev` and any other non-projects name.
+# Without this, the ACM-issued projects wildcard below (Google CA) would
+# walk up to the apex CAA (`letsencrypt.org`), hit the `issuewild
+# letsencrypt.org` pin, and fail to issue via Google Trust Services.
+# Publishing CAA at `projects.jackhall.dev` overrides the walk for
+# `projects.*` and below; the apex pin still applies to
+# `*.lab.jackhall.dev` and any other non-projects name. `letsencrypt.org`
+# is included alongside `pki.goog` so that flipping the certificate pack
+# to `certificate_authority = "lets_encrypt"` doesn't require a CAA
+# change too.
 resource "cloudflare_dns_record" "projects_caa_issue" {
   for_each = toset(var.projects_caa_issuers)
 
@@ -147,6 +157,36 @@ resource "cloudflare_dns_record" "projects_caa_issuewild" {
     tag   = "issuewild"
     value = each.value
   }
+}
+
+# --- Projects edge certificate: ACM advanced wildcard -----------------------
+#
+# CF Universal SSL on the Free plan covers depth-1 names only (apex +
+# `*.<apex>`); CA/B Forum's nested-wildcard prohibition means
+# `*.jackhall.dev` cannot cover `<anything>.<anything>.jackhall.dev`.
+# Our preview hostnames are `<svc>-<ns>.projects.jackhall.dev` — two
+# labels deep — so Universal SSL has no cert that can serve them and CF
+# rejects the TLS handshake at the edge. Advanced Certificate Manager
+# (paid: $10/mo per zone) issues a cert whose SAN list explicitly
+# includes both `projects.jackhall.dev` and `*.projects.jackhall.dev`,
+# which terminates TLS correctly for any single-label name under
+# `projects`.
+#
+# DNS-01 (`validation_method = "txt"`) is auto-served by CF inside this
+# same apex zone, so no operator interaction is needed for validation
+# or renewal. `certificate_authority = "google"` matches the pki.goog
+# entry in the projects CAA exception above; `lets_encrypt` would also
+# satisfy CAA but Google issues faster and is CF's default for ACM.
+# `validity_days = 90` matches the LE-style cadence we're used to from
+# cert-manager on the lab path; CF auto-renews.
+resource "cloudflare_certificate_pack" "projects_wildcard" {
+  zone_id               = local.apex_zone.id
+  type                  = "advanced"
+  hosts                 = [local.projects_record_name, "*.${local.projects_record_name}"]
+  validation_method     = "txt"
+  validity_days         = 90
+  certificate_authority = "google"
+  cloudflare_branding   = false
 }
 
 # --- Cloudflare Tunnel ------------------------------------------------------
@@ -200,7 +240,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "projects" {
 
 # Wildcard CNAME. `proxied = true` is load-bearing — without it the
 # CNAME resolves to the cfargotunnel.com host directly, browsers see
-# whatever cert cfargotunnel presents (not the apex-zone wildcard),
+# whatever cert cfargotunnel presents (not the ACM-issued wildcard),
 # and the request never reaches the tunnel correctly.
 resource "cloudflare_dns_record" "projects_wildcard" {
   zone_id = local.apex_zone.id

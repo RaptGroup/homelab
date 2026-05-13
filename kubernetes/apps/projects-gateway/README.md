@@ -3,8 +3,10 @@
 The `projects` Cilium Gateway — the second cluster Gateway, alongside
 `lab`, for public preview environments. Receives cleartext HTTP from
 the in-cluster `cloudflared` Deployment, which has already terminated
-TLS at Cloudflare's edge. Routes by hostname to HTTPRoutes in preview
-namespaces.
+TLS at Cloudflare's edge using an ACM-issued advanced wildcard for
+`*.projects.jackhall.dev` (see ADR-0006's 2026-05-13 amendment for
+why Universal SSL is insufficient). Routes by hostname to HTTPRoutes
+in preview namespaces.
 
 See [ADR-0006](../../../docs/adr/0006-public-preview-environments-via-cloudflare-tunnel.md)
 for the full design; this addon is the cluster-side surface, paired
@@ -33,7 +35,7 @@ the Namespace resource ownership.
 | Listener name                                   | `http`                                                    |
 | Listener hostname                               | `*.projects.jackhall.dev`                                 |
 | Listener port / protocol                        | `80` / `HTTP`                                             |
-| TLS                                             | None at this Gateway — terminated at Cloudflare's edge    |
+| TLS                                             | None at this Gateway — terminated at CF using ACM wildcard |
 | `allowedRoutes.namespaces.from`                 | `Selector`                                                |
 | namespaceSelector                               | `projects.jackhall.dev/enabled=true`                      |
 
