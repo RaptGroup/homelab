@@ -1,8 +1,9 @@
 # terraform/cloudflare
 
 Cloudflare-side records for the homelab's two public surfaces (ADR-0003
-amendment + ADR-0006 amendment, both 2026-05-12). Owns the contents of
-the CF-managed apex `jackhall.dev` zone:
++ ADR-0006, both amended 2026-05-12 and ADR-0006 amended again
+2026-05-13). Owns the contents of the CF-managed apex `jackhall.dev`
+zone:
 
 - Apex CAA pinning issuance to Let's Encrypt (mirror of the pre-move
   Cloud DNS CAA — load-bearing for `*.lab.jackhall.dev` cert renewals).
@@ -10,7 +11,15 @@ the CF-managed apex `jackhall.dev` zone:
   `ns-cloud-d*.googledomains.com.` Cloud DNS nameservers. Keeps the
   `lab.jackhall.dev` zone exactly where it was.
 - CAA exception at `projects.jackhall.dev` allowing pki.goog +
-  letsencrypt.org (CF's contracted CAs for Universal SSL).
+  letsencrypt.org — gates the ACM-issued wildcard below to Google
+  Trust Services for `projects.*` while leaving the apex
+  `letsencrypt.org` pin intact for `*.lab.jackhall.dev`.
+- ACM-issued advanced certificate pack covering
+  `projects.jackhall.dev` + `*.projects.jackhall.dev` (Google CA, TXT
+  validation, 90-day validity, CF-auto-renewed). Universal SSL on the
+  Free plan can't serve two-label hostnames, so the preview surface
+  needs an explicitly-listed multi-SAN cert. See ADR-0006's
+  2026-05-13 amendment.
 - Named cloudflared tunnel + its ingress config + the wildcard CNAME
   for the public preview surface.
 - GSM version write of the per-tunnel connector token for the
@@ -64,12 +73,16 @@ This root depends on `terraform/gcp/` having applied at least once, so:
    - Permissions:
      - `Zone:Zone:Edit` (read+edit zone metadata)
      - `Zone:DNS:Edit` (CAA, NS, CNAME)
+     - `Zone:SSL and Certificates:Edit` (the ACM advanced cert pack)
      - `Account:Cloudflare Tunnel:Edit` (the tunnel, its config, the token)
    - Zone resources: include → specific zone → `jackhall.dev`
    - Account resources: include → the account that owns the zone
 
    The Tunnel permission is account-scoped because tunnels are
    account-level objects in CF's data model; the rest are zone-scoped.
+   `SSL and Certificates` was added in ADR-0006's 2026-05-13 amendment;
+   widen an existing token in-place rather than minting a new one, so
+   the GSM-stored value doesn't have to rotate.
 
 3. **Upload the token to GSM:**
 
@@ -148,6 +161,16 @@ dig +short CNAME canary.projects.jackhall.dev @"$CF_NS"
 dig +short SOA jackhall.dev @"$CF_NS"
 # Expect:
 #   <ns>.cloudflare.com. dns.cloudflare.com. ...
+
+# 6. ACM cert pack issued and serving from CF's edge for a two-label
+#    name under projects.*. CF won't terminate TLS without this; before
+#    issuance completes you'll see `alert handshake failure` here.
+echo | openssl s_client -connect canary.projects.jackhall.dev:443 \
+  -servername canary.projects.jackhall.dev 2>/dev/null \
+  | openssl x509 -noout -subject -issuer
+# Expect:
+#   subject=CN = *.projects.jackhall.dev      (or DNS SAN list including it)
+#   issuer=C = US, O = Google Trust Services, CN = WE1 (or similar GTS leaf)
 ```
 
 If any of these are empty or unexpected, **do not flip Squarespace**.
