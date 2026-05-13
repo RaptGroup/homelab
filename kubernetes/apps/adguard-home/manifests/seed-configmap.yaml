@@ -12,9 +12,13 @@
 #   - Cloudflare + Google DoH upstreams (TLS-encrypted; the lab egresses
 #     plaintext DNS otherwise)
 #   - Wildcard rewrite *.lab.jackhall.dev → 192.168.1.201 (the central
-#     `lab` Gateway in gateway-system; issue #48). Every addon hostname
-#     resolves through this single entry — no per-host rewrites are
-#     needed as new web-exposed addons come online.
+#     `lab` Gateway in gateway-system; issue #48). Every web-exposed addon
+#     hostname resolves through this single entry — no per-host rewrites
+#     are needed as new web-exposed addons come online.
+#   - Per-node A records for the Talos control-plane + workers and the
+#     control-plane VIP (issue #135). Specific names beat the wildcard
+#     in AdGuard, so `talosctl --nodes <hostname>` / ssh / ping by
+#     hostname work without memorising IPs.
 #   - DHCP server explicitly disabled (out-of-scope per PRD #4).
 #   - One default filter list (AdGuard DNS filter). Operator can add
 #     more in the UI; further automation is deferred.
@@ -116,6 +120,23 @@ data:
       parental_block_host: family-block.dns.adguard.com
       safebrowsing_block_host: standard-block.dns.adguard.com
       rewrites:
+        # Specific names beat the wildcard below, so talosctl/ssh/ping by
+        # hostname work without per-host UI entries (issue #135).
+        - domain: cp-01.lab.jackhall.dev
+          answer: 192.168.1.245
+        - domain: cp-02.lab.jackhall.dev
+          answer: 192.168.1.246
+        - domain: cp-03.lab.jackhall.dev
+          answer: 192.168.1.247
+        - domain: worker-01.lab.jackhall.dev
+          answer: 192.168.1.241
+        - domain: worker-02.lab.jackhall.dev
+          answer: 192.168.1.242
+        - domain: worker-03.lab.jackhall.dev
+          answer: 192.168.1.243
+        # Control-plane VIP — handy default for `talosctl --endpoints`.
+        - domain: rockingham.lab.jackhall.dev
+          answer: 192.168.1.240
         - domain: "*.lab.jackhall.dev"
           answer: 192.168.1.201
       safebrowsing_cache_size: 1048576
