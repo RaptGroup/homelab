@@ -1,0 +1,33 @@
+# preview-env-reaper — hourly CronJob that deletes preview namespaces
+# whose `projects.jackhall.dev/expires-at` annotation has passed
+# (ADR-0006). Backstop for orphans from crashed Skaffold sessions,
+# force-closed PRs, and any other case where the wrapper's teardown
+# did not run.
+#
+# Single-source path-only Application — raw manifests under manifests/.
+# No upstream chart exists for the shape we want and the manifests are
+# small enough that a chart would be more wrapping than substance.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: preview-env-reaper
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: projects-system
+  source:
+    repoURL: git@github.com:RaptGroup/homelab.git
+    targetRevision: main
+    path: kubernetes/apps/preview-env-reaper/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

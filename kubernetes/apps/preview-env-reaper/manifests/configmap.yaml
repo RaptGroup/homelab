@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: preview-env-reaper-script
+  namespace: projects-system
+data:
+  # The Go template prints "<ns>\t<expires-at>\n" per labelled namespace.
+  # `index` reaches the dotted annotation key (Go templates can't dot
+  # into it with field syntax); the two nested `with` blocks
+  # short-circuit cleanly when the annotations map is absent OR present
+  # but missing the key, so the expires column comes back empty instead
+  # of "<no value>" in either case.
+  reap.sh: |
+    #!/bin/sh
+    set -eu
+
+    LABEL="projects.jackhall.dev/enabled=true"
+    ANN_KEY="projects.jackhall.dev/expires-at"
+    NOW_EPOCH=$(date -u +%s)
+    TAB=$(printf '\t')
+
+    TMPL='{{range .items}}{{.metadata.name}}{{"\t"}}{{with .metadata.annotations}}{{with (index . "projects.jackhall.dev/expires-at")}}{{.}}{{end}}{{end}}{{"\n"}}{{end}}'
+
+    kubectl get namespace -l "$LABEL" -o go-template="$TMPL" |
+    while IFS="$TAB" read -r ns expires; do
+      [ -z "$ns" ] && continue
+      if [ -z "$expires" ]; then
+        printf 'ns=%s: no %s annotation, leaving alone\n' "$ns" "$ANN_KEY"
+        continue
+      fi
+      if ! exp_epoch=$(date -u -d "$expires" +%s 2>/dev/null); then
+        printf 'ns=%s: cannot parse expires-at=%s, leaving alone\n' "$ns" "$expires" >&2
+        continue
+      fi
+      if [ "$NOW_EPOCH" -ge "$exp_epoch" ]; then
+        printf 'ns=%s: expired at %s, deleting\n' "$ns" "$expires"
+        kubectl delete namespace "$ns" --wait=false
+      else
+        printf 'ns=%s: expires at %s, leaving alone\n' "$ns" "$expires"
+      fi
+    done

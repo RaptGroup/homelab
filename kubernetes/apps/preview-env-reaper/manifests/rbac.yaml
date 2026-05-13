@@ -1,0 +1,31 @@
+# Minimum RBAC the reaper needs:
+#   - list namespaces cluster-wide so it can filter by label
+#   - delete namespaces by name (the script never deletes anything
+#     that did not come back from the labelled list)
+#
+# RBAC cannot filter on labels — the label gate is enforced in the
+# script. The `delete` verb is necessarily cluster-wide on the
+# `namespaces` resource because there is no narrower scope for a
+# cluster-scoped resource. The reaper SA is the only principal that
+# holds it outside the cluster-admin path.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-env-reaper
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: preview-env-reaper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: preview-env-reaper
+subjects:
+  - kind: ServiceAccount
+    name: preview-env-reaper
+    namespace: projects-system
