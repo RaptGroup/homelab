@@ -18,6 +18,25 @@ serviceAccount:
   name: homepage
   create: true
 
+# Satisfy the "restricted" PodSecurity admission profile so the cluster
+# stops emitting warnings on every reconcile / rollout. The upstream
+# gethomepage/homepage image already runs as UID/GID 1000 (the `node`
+# user from its node:alpine base); fsGroup matches so the chart's
+# emptyDir log volume and configMap-mounted config files stay writable.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
 # gethomepage.dev/* annotations documenting the convention by example.
 # Homepage's own discovery loop (with config.kubernetes.gateway: true)
 # scans HTTPRoutes — see manifests/httproute.yaml for the discovery copy
