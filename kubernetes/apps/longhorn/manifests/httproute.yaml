@@ -27,16 +27,24 @@ metadata:
     gethomepage.dev/group: Platform
     gethomepage.dev/icon: longhorn.png
     gethomepage.dev/href: https://longhorn.lab.jackhall.dev
-    # Status-discovery override. Homepage's default lookup uses
-    # `app.kubernetes.io/name=<HTTPRoute name>` in the route's
-    # namespace; the route is `longhorn-ui` and the chart's
-    # longhorn-ui Deployment carries `app=longhorn-ui` — close enough
-    # that the default would match, but pin it explicitly so a chart
-    # label drift doesn't quietly blank the status pill.
-    gethomepage.dev/app: longhorn-ui
+    # Status-discovery override. The Longhorn chart sets
+    # `app.kubernetes.io/name=longhorn` uniformly across every
+    # workload it renders (longhorn-ui Deployment, longhorn-manager
+    # DaemonSet, longhorn-driver-deployer, the csi-* Deployments) —
+    # per-component identity rides on the *bare* `app=` label
+    # (`app=longhorn-ui`, `app=longhorn-manager`, …). Homepage's
+    # `gethomepage.dev/app` only swaps the *value* matched against
+    # `app.kubernetes.io/name=`, so it cannot reach a per-component
+    # pod here. `gethomepage.dev/pod-selector` is passed through to
+    # the pod list API as a raw label selector instead, which lets
+    # us target the right Deployment / DaemonSet directly (#166).
+    gethomepage.dev/pod-selector: app=longhorn-ui
     gethomepage.dev/widget.type: kubernetes
     gethomepage.dev/widget.namespace: longhorn-system
+    # widget.app stays in the API URL path but is ignored once
+    # widget.podSelector is set — the value drives the lookup.
     gethomepage.dev/widget.app: longhorn-manager
+    gethomepage.dev/widget.podSelector: app=longhorn-manager
 spec:
   # Spell out the Gateway API admission-webhook defaults (parentRef
   # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
