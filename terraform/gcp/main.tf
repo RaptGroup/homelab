@@ -894,10 +894,35 @@ resource "google_iam_workload_identity_pool_provider" "cluster_talos" {
 # preview namespace, replace this with a principalSet on
 # `attribute.namespace` matching the preview-env naming scheme so a
 # single binding covers every preview at once.
+#
+# Currently unused: ESO 1.3.2's `auth.workloadIdentityFederation`
+# returns the federated principal's access token directly and has no
+# code path to call iamcredentials:generateAccessToken — the
+# annotation-reader that does the impersonation hop landed in v2.x.
+# Until the chart is bumped (#168) the AR-reader binding below grants
+# the role to the principal directly; this binding stays so the
+# eventual swap back to impersonation is a one-line resource delete.
 resource "google_service_account_iam_member" "cluster_pull_wif_user" {
   service_account_id = google_service_account.cluster_pull.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.cluster_pull_k8s_namespace}:${var.cluster_pull_k8s_sa}"
+}
+
+# Interim direct binding (track in #168): grant
+# roles/artifactregistry.reader straight to the federated K8s SA
+# principal. Currently load-bearing because ESO 1.3.2 returns the
+# federated principal's token without impersonating tf-ci-cluster-pull
+# (see the workloadIdentityUser binding's note above). Delete this
+# resource when #168 bumps ESO to v2.x — impersonation kicks in via
+# the iam.gke.io/gcp-service-account annotation already on the
+# ar-canary-puller ServiceAccount, and the existing
+# workloadIdentityUser binding above becomes the active grant path.
+resource "google_artifact_registry_repository_iam_member" "cluster_oidc_principal_reader" {
+  project    = google_project.lab.project_id
+  location   = google_artifact_registry_repository.projects.location
+  repository = google_artifact_registry_repository.projects.name
+  role       = "roles/artifactregistry.reader"
+  member     = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.cluster_pull_k8s_namespace}:${var.cluster_pull_k8s_sa}"
 }
 
 # --- Longhorn off-site backups (GCS via S3 interop) ------------------------
