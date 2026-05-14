@@ -218,7 +218,7 @@ projections). Plan the window:
      gs://rockingham-homelab-oidc/openid/v1/jwks \
      --content-type=application/json \
      --cache-control='public, max-age=300'
-   shred -u /tmp/jwks.json
+   rm -f /tmp/jwks.json   # shred isn't on macOS; APFS/ext4 make file-level overwrite unreliable anyway — FileVault/LUKS is the gate
    ```
 
 4. Verify external resolvers see the discovery doc and JWKS:

@@ -989,7 +989,7 @@ resource "google_storage_bucket_iam_member" "longhorn_backup_object_admin" {
 #         $(tofu output -raw longhorn_backup_credentials_secret_id) \
 #         --project=$(tofu output -raw project_id) \
 #         --data-file=-
-#   shred -u /tmp/longhorn-hmac.json
+#   rm -f /tmp/longhorn-hmac.json
 #
 # Rotation: `gcloud storage hmac update <access_id> --deactivate` the
 # current key, mint a new one with the same command above, upload as a

@@ -410,7 +410,7 @@ gcloud storage cp /tmp/jwks.json \
   --content-type=application/json \
   --cache-control='public, max-age=300'
 
-shred -u /tmp/jwks.json
+rm -f /tmp/jwks.json   # shred isn't on macOS; APFS/ext4 make file-level overwrite unreliable anyway — FileVault/LUKS is the gate
 ```
 
 Re-run after every Talos `talosctl gen secrets` rotation. WIF token
@@ -452,7 +452,7 @@ jq -c '{access_id: .accessId, secret: .secret}' /tmp/longhorn-hmac.json \
       --project=$(tofu output -raw project_id) \
       --data-file=-
 
-shred -u /tmp/longhorn-hmac.json
+rm -f /tmp/longhorn-hmac.json
 ```
 
 After the upload propagates (ESO refresh, default 1h), Longhorn's UI
