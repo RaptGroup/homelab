@@ -1,14 +1,42 @@
-# Exchanges the cluster-pull SA's JSON key for a short-lived GCP
-# OAuth access token scoped to Artifact Registry. The token's lifetime
-# is ~1 hour at the GCP API level; the ExternalSecret in
-# external-secret-docker-config.yaml refreshes it every 30 minutes so
-# the dockerconfigjson Pods reference never drifts past half-life.
+# Exchange a projected `ar-canary-puller` ServiceAccount token for a
+# short-lived GCP OAuth access token scoped to Artifact Registry, via
+# the cluster's own OIDC issuer and a GCP Workload Identity Federation
+# pool — no JSON key anywhere on the pull path.
 #
-# `projectID` must match the GCP project that owns the AR repo
-# (matches terraform/gcp/var.project_id). The token is repo-scoped by
-# the cluster-pull SA's IAM (roles/artifactregistry.reader on the
-# `projects` repo only, set in terraform/gcp/main.tf) — the generator
-# does not constrain scope itself, the SA's role does.
+# Flow:
+#
+#   1. ESO operator calls kube-apiserver's TokenRequest API for the
+#      `ar-canary-puller` SA below, with `audience` set to the WIF
+#      provider's full resource name. kube-apiserver mints a JWT signed
+#      by the cluster's SA signing key, with `iss` = the public OIDC
+#      issuer URL configured in talos/patches/cluster/oidc-issuer.yaml.
+#   2. ESO POSTs the JWT to sts.googleapis.com. GCP STS fetches
+#      <issuer>/.well-known/openid-configuration + JWKS from the
+#      public GCS bucket (terraform/gcp/) to validate the signature.
+#   3. STS returns a federated access token whose subject is the K8s
+#      SA's `system:serviceaccount:ar-canary:ar-canary-puller`.
+#   4. ESO calls iamcredentials.googleapis.com to impersonate
+#      tf-ci-cluster-pull, using the federated token as the caller.
+#      The workloadIdentityUser binding in terraform/gcp/main.tf is
+#      what authorizes that impersonation.
+#   5. ESO returns the impersonated SA's access token (~1h lifetime)
+#      to the ExternalSecret in external-secret-docker-config.yaml,
+#      which renders it as a dockerconfigjson refreshed every 30 min.
+#
+# `projectID` is the GCP project ID. `audience` is the WIF provider's
+# full resource name — `//iam.googleapis.com/projects/<project_number>/...`.
+# Project number 594695390705 is the numeric ID of rockingham-homelab;
+# the matching `tofu output -raw cluster_wif_provider` in terraform/gcp/
+# prints this whole string verbatim.
+#
+# The GCP SA to impersonate after the STS exchange comes from the
+# `iam.gke.io/gcp-service-account` annotation on `ar-canary-puller`
+# (see serviceaccount.yaml) — ESO's workloadIdentityFederation reader
+# fetches the SA, reads the annotation, and sets the STS exchange's
+# service-account-impersonation-url from it. The newer
+# `gcpServiceAccountEmail` field that would set this inline was added
+# upstream on 2026-05-13 and is not yet in v1.3.2; revisit on the next
+# ESO bump.
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: GCRAccessToken
 metadata:
@@ -17,7 +45,8 @@ metadata:
 spec:
   projectID: rockingham-homelab
   auth:
-    secretRef:
-      secretAccessKeySecretRef:
-        name: ar-pull-sa-key
-        key: credentials.json
+    workloadIdentityFederation:
+      audience: //iam.googleapis.com/projects/594695390705/locations/global/workloadIdentityPools/cluster/providers/talos
+      serviceAccountRef:
+        name: ar-canary-puller
+        namespace: ar-canary

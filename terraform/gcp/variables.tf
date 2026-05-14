@@ -151,9 +151,45 @@ variable "arc_push_sa_id" {
 }
 
 variable "cluster_pull_sa_id" {
-  description = "Service account ID (the part before @) for the in-cluster Artifact Registry pull SA. roles/artifactregistry.reader scoped to the `projects` repo. A JSON key for this SA lives in GSM (container TF-managed here, value uploaded out of band) and is exchanged in-cluster by an ESO GCRAccessToken generator for a short-lived dockerconfigjson — see kubernetes/apps/ar-canary/."
+  description = "Service account ID (the part before @) for the in-cluster Artifact Registry pull SA. roles/artifactregistry.reader scoped to the `projects` repo. Impersonated from in-cluster Pods via the cluster's Workload Identity Federation pool — no JSON key. See kubernetes/apps/ar-canary/."
   type        = string
   default     = "tf-ci-cluster-pull"
+}
+
+variable "cluster_oidc_bucket" {
+  description = "Globally-unique GCS bucket serving the cluster's OIDC discovery document + JWKS. The bucket name is baked into the issuer URL `https://storage.googleapis.com/<bucket>`, which is in turn baked into Talos's --service-account-issuer; renaming requires a coordinated cluster + IAM rollout, so default-and-leave."
+  type        = string
+  default     = "rockingham-homelab-oidc"
+}
+
+variable "cluster_oidc_bucket_location" {
+  description = "Location for the OIDC bucket. Single region (cheaper). The bucket holds two static objects under 10 KiB combined; latency is irrelevant."
+  type        = string
+  default     = "US-CENTRAL1"
+}
+
+variable "cluster_wif_pool_id" {
+  description = "WIF pool ID dedicated to the Talos cluster. Separate from `github-actions` so the pool boundary advertises the identity source — GitHub OIDC for the push path, the cluster's own OIDC for the pull path."
+  type        = string
+  default     = "cluster"
+}
+
+variable "cluster_wif_provider_id" {
+  description = "WIF provider ID inside the cluster pool. `talos` to advertise the source of the JWTs."
+  type        = string
+  default     = "talos"
+}
+
+variable "cluster_pull_k8s_namespace" {
+  description = "Kubernetes namespace whose ServiceAccount is allowed to impersonate tf-ci-cluster-pull through the cluster's WIF. Narrow on purpose — the ar-canary slice is the only consumer until the preview-env baseline templates a per-preview puller SA in. At that point this binding is widened (or replaced with a principalSet on attribute.namespace) to cover the preview-* namespace pattern."
+  type        = string
+  default     = "ar-canary"
+}
+
+variable "cluster_pull_k8s_sa" {
+  description = "Kubernetes ServiceAccount name (inside cluster_pull_k8s_namespace) whose projected token is exchanged for tf-ci-cluster-pull credentials. Must match the SA created in kubernetes/apps/ar-canary/manifests/serviceaccount.yaml."
+  type        = string
+  default     = "ar-canary-puller"
 }
 
 # Note: variables `projects_dns_name` and `projects_zone_nameservers` were

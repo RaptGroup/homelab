@@ -1,0 +1,38 @@
+# Publish kube-apiserver's service-account-issuer at a publicly-
+# reachable URL so the cluster can mint its own credentials for GCP
+# via Workload Identity Federation. See terraform/gcp/ for the
+# matching WIF pool + provider and the GCS bucket that hosts the
+# OIDC discovery document + JWKS; kubernetes/apps/ar-canary/ is the
+# first consumer.
+#
+# Default `--service-account-issuer` is cluster-internal
+# (`https://kubernetes.default.svc.cluster.local`) and unreachable
+# from GCP STS, so the cluster→GCP token exchange cannot validate
+# the JWT's signature without this patch.
+#
+# Applied alongside the per-node CP patches via
+# `talosctl machineconfig patch` — see talos/README.md.
+cluster:
+  apiServer:
+    extraArgs:
+      # The `iss` claim on every projected SA token. Must equal the
+      # `issuer_uri` on the GCP WIF provider in terraform/gcp/.
+      service-account-issuer: https://storage.googleapis.com/rockingham-homelab-oidc
+      # Where kube-apiserver advertises the JWKS in its own
+      # `/.well-known/openid-configuration` (which we don't expose
+      # externally — GCP STS reads the TF-managed discovery doc in
+      # the GCS bucket). Set for consistency so the in-cluster and
+      # external discovery docs agree.
+      service-account-jwks-uri: https://storage.googleapis.com/rockingham-homelab-oidc/openid/v1/jwks
+      # Accepted audiences for in-cluster TokenReview. The default
+      # tracks `--service-account-issuer`, so listing both the issuer
+      # URL and the WIF provider's full resource name (the audience
+      # ESO requests for the projected token) means:
+      #   - in-cluster auth flows continue to work
+      #   - the WIF-bound projected token, if ever submitted via
+      #     TokenReview, is also accepted
+      # The second case isn't load-bearing — WIF tokens are validated
+      # by GCP STS, not kube-apiserver — but keeping the audiences
+      # explicit means TokenReview doesn't silently reject anything
+      # the cluster mints.
+      api-audiences: https://storage.googleapis.com/rockingham-homelab-oidc

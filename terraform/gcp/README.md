@@ -29,8 +29,13 @@ dedicated project (`rockingham-homelab` by default):
   (`tf-ci-arc-push`, repo-scoped `roles/artifactregistry.writer`)
   impersonable from any allowlisted repo's workflows, and a pull SA
   (`tf-ci-cluster-pull`, repo-scoped `roles/artifactregistry.reader`)
-  whose JSON key lives in a GSM container consumed in-cluster by
-  [`kubernetes/apps/ar-canary/`](../../kubernetes/apps/ar-canary).
+  impersonable from in-cluster Pods via the cluster's own OIDC issuer
+  through a dedicated `cluster` WIF pool — no JSON key anywhere.
+- Public-read GCS bucket (`rockingham-homelab-oidc`) hosting the
+  Talos cluster's OIDC discovery document and JWKS. Issuer URL
+  (`https://storage.googleapis.com/rockingham-homelab-oidc`) is
+  baked into Talos's `--service-account-issuer` and trusted by the
+  cluster WIF provider.
 
 State lives in `gs://rockingham-homelab-tfstate/terraform/gcp/` so local
 and CI applies share the same state. The bucket is created by this same
@@ -338,40 +343,74 @@ printed by `tofu output`:
 | `GCP_ARC_PUSH_SA`       | `tofu output -raw arc_push_service_account_email`      |
 | `GCP_AR_REPO_URL`       | `tofu output -raw artifact_registry_repository_url`    |
 
-### Pull: cluster → AR via in-namespace ESO generator
+### Pull: cluster → AR via cluster OIDC + WIF
 
-Talos has no GKE-style workload identity, so the cluster authenticates
-to AR with a JSON key for `tf-ci-cluster-pull`. The key value lives in
-GSM (container TF-managed here, value uploaded out of band — same
-pattern as `argocd-repo-ssh-key`, `arc-app-private-key`, and
-`talos-cluster-secrets`). Inside the cluster, an ESO
-`GCRAccessToken` generator exchanges the key for a short-lived
-OAuth access token every 30 minutes; the resulting
-`kubernetes.io/dockerconfigjson` Secret is what Pods reference as
-`imagePullSecrets`. See
-[`kubernetes/apps/ar-canary/`](../../kubernetes/apps/ar-canary)
-for the canary deployment that exercises this path end-to-end.
+The cluster authenticates as `tf-ci-cluster-pull` via Workload Identity
+Federation against its own OIDC issuer — no JSON key, same posture as
+the ARC push path has via GitHub OIDC. The pieces:
 
-After the first apply, mint and upload the JSON key (one-time;
-re-run for rotation):
+- **Issuer URL.** A public-read GCS bucket
+  (`var.cluster_oidc_bucket`, default `rockingham-homelab-oidc`)
+  serves the cluster's OIDC discovery document at
+  `https://storage.googleapis.com/<bucket>/.well-known/openid-configuration`
+  and JWKS at
+  `https://storage.googleapis.com/<bucket>/openid/v1/jwks`. The
+  bucket and the discovery document are TF-managed; the JWKS is
+  fetched from the live cluster (`kubectl get --raw /openid/v1/jwks`)
+  and uploaded out of band whenever the cluster's signing keys rotate
+  — see `talos/README.md`.
+- **Talos.** `cluster.apiServer.extraArgs.service-account-issuer`
+  is pointed at the public URL by
+  [`talos/patches/cluster/oidc-issuer.yaml`](../../talos/patches/cluster/oidc-issuer.yaml).
+  Without that, projected SA tokens have an `iss` claim GCP STS
+  cannot reach to validate.
+- **WIF pool + provider.** A dedicated pool `cluster` with a
+  provider `talos` (separate from the GitHub `github-actions` pool)
+  trusts the cluster's issuer URL. The provider's `attribute_mapping`
+  extracts `sub`, namespace, and SA name from the JWT so SA bindings
+  can pattern-match on namespace once the preview-env baseline
+  templates this shape into per-preview namespaces.
+- **Per-SA binding.** `tf-ci-cluster-pull` has a single narrow
+  `workloadIdentityUser` binding keyed on
+  `principal://…/subject/system:serviceaccount:ar-canary:ar-canary-puller`
+  (configurable via `var.cluster_pull_k8s_namespace` /
+  `var.cluster_pull_k8s_sa`). When the preview-env baseline lands,
+  swap this for a `principalSet://…/attribute.namespace/<pattern>`
+  so one binding covers every preview namespace.
+
+Inside the cluster, ESO's `GCRAccessToken` generator uses
+`auth.workloadIdentityFederation` (the non-GKE variant): it requests a
+projected token for the `ar-canary-puller` ServiceAccount, exchanges
+it at GCP STS for a federated access token, then impersonates
+`tf-ci-cluster-pull` for the OAuth scope that lets it pull from the
+`projects` AR repo. The resulting short-lived dockerconfigjson is what
+Pods reference as `imagePullSecrets`. See
+[`kubernetes/apps/ar-canary/`](../../kubernetes/apps/ar-canary).
+
+#### Bootstrap: publishing the cluster's JWKS
+
+The bucket and discovery document exist after the first `tofu apply`,
+but the JWKS object has to come from the cluster:
 
 ```sh
-gcloud iam service-accounts keys create /tmp/cluster-pull.json \
-  --iam-account=$(tofu output -raw cluster_pull_service_account_email) \
-  --project=$(tofu output -raw project_id)
-gcloud secrets versions add $(tofu output -raw cluster_pull_sa_key_secret_id) \
-  --project=$(tofu output -raw project_id) \
-  --data-file=/tmp/cluster-pull.json
-shred -u /tmp/cluster-pull.json
+# Apply the Talos issuer patch first — see talos/README.md.
+# Then, with KUBECONFIG pointed at the cluster:
+kubectl get --raw /openid/v1/jwks > /tmp/jwks.json
+
+# Upload with the same content-type and cache-control headers the
+# TF-managed discovery doc carries — GCP STS caches JWKS by
+# Cache-Control, so 5 min lines up with the discovery doc's TTL.
+gcloud storage cp /tmp/jwks.json \
+  gs://$(tofu output -raw cluster_oidc_bucket)/openid/v1/jwks \
+  --content-type=application/json \
+  --cache-control='public, max-age=300'
+
+shred -u /tmp/jwks.json
 ```
 
-The cluster→GCP WIF path (no key at all) would require publishing
-the Talos cluster's OIDC discovery document to a public endpoint
-and configuring a WIF pool with the cluster as a trusted identity
-provider — a meaningfully larger project deliberately out of scope
-for #125. The repo-scoped reader role bounds blast radius if the
-key leaks, and the 30-minute dockerconfigjson rotation bounds how
-long any stolen Pod-mounted credential stays usable.
+Re-run after every Talos `talosctl gen secrets` rotation. WIF token
+exchange fails until the JWKS contains the public half of the
+cluster's current signing key.
 
 ## Outputs
 
@@ -390,5 +429,7 @@ long any stolen Pod-mounted credential stays usable.
 | `arc_workload_identity_provider`      | `GCP_ARC_WIF_PROVIDER` Actions repository variable               |
 | `arc_push_service_account_email`      | `GCP_ARC_PUSH_SA` Actions repository variable                    |
 | `artifact_registry_repository_url`    | `GCP_AR_REPO_URL` Actions repository variable; image-path prefix |
-| `cluster_pull_service_account_email`  | Operator → `gcloud iam service-accounts keys create` (key mint)  |
-| `cluster_pull_sa_key_secret_id`       | Operator → `gcloud secrets versions add` (key upload)            |
+| `cluster_pull_service_account_email`  | Reference only — impersonation target for the cluster WIF binding (the K8s side names it in `gcpServiceAccountEmail` on the ESO generator) |
+| `cluster_oidc_issuer`                 | Operator → Talos config (`--service-account-issuer`); also baked into the cluster WIF provider's `issuer_uri` |
+| `cluster_oidc_bucket`                 | Operator → `gcloud storage cp` of the cluster JWKS (one-time after each Talos secret rotation) |
+| `cluster_wif_provider`                | Operator → ESO generator `auth.workloadIdentityFederation.audience` in `kubernetes/apps/ar-canary/` |

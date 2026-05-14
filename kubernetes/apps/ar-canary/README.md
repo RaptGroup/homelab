@@ -9,12 +9,12 @@ templates the same shape into every preview namespace.
 
 ## What it provisions
 
-| Resource                              | What it does                                                                                        |
-|---------------------------------------|-----------------------------------------------------------------------------------------------------|
-| `Namespace ar-canary`                 | The single canary namespace for verification.                                                       |
-| `ExternalSecret ar-pull-sa-key`       | Syncs the `tf-ci-cluster-pull` JSON key from GSM (`tf-ci-cluster-pull-key`) into a K8s Secret.      |
-| `GCRAccessToken ar-pull-token`        | ESO generator that exchanges the JSON key for a short-lived GCP OAuth access token.                 |
-| `ExternalSecret ar-pull`              | Renders the generator output as a `kubernetes.io/dockerconfigjson` Secret, refreshed every 30 min.  |
+| Resource                          | What it does                                                                                                                                                                              |
+|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Namespace ar-canary`             | The single canary namespace for verification.                                                                                                                                             |
+| `ServiceAccount ar-canary-puller` | The K8s identity ESO mints projected tokens for. Bound 1:1 to `tf-ci-cluster-pull` via the cluster WIF binding in `terraform/gcp/`.                                                       |
+| `GCRAccessToken ar-pull-token`    | ESO generator that exchanges a `ar-canary-puller` projected token at GCP STS for a federated access token, then impersonates `tf-ci-cluster-pull` for an Artifact-Registry-scoped OAuth token. |
+| `ExternalSecret ar-pull`          | Renders the generator output as a `kubernetes.io/dockerconfigjson` Secret, refreshed every 30 min.                                                                                        |
 
 Pods in this namespace reference `ar-pull` as their
 `imagePullSecrets` to pull from
@@ -23,11 +23,22 @@ Pods in this namespace reference `ar-pull` as their
 ## Credential path
 
 ```
-GSM secret `tf-ci-cluster-pull-key`  (long-lived JSON key, value uploaded out of band)
-        │  ESO ClusterSecretStore `gsm` (refresh 1h)
+K8s ServiceAccount `ar-canary-puller`   (no credentials of its own)
+        │  ESO calls kube-apiserver TokenRequest API
+        │  with audience = WIF provider's full resource name
         ▼
-K8s Secret `ar-pull-sa-key` (Opaque, namespace-scoped to ar-canary)
-        │  GCRAccessToken generator
+projected JWT signed by the cluster's SA signing key
+        │  ESO POSTs JWT to sts.googleapis.com
+        │  GCP STS fetches <issuer>/.well-known/openid-configuration
+        │  + JWKS from gs://rockingham-homelab-oidc/ to validate
+        ▼
+federated access token (subject = K8s SA principal)
+        │  ESO calls iamcredentials.googleapis.com to impersonate
+        │  tf-ci-cluster-pull, authorized by the workloadIdentityUser
+        │  binding in terraform/gcp/
+        ▼
+GCP access token scoped to roles/artifactregistry.reader on `projects`
+        │  GCRAccessToken generator returns it
         ▼
 K8s Secret `ar-pull` (kubernetes.io/dockerconfigjson, refresh 30m)
         │  imagePullSecrets reference
@@ -35,45 +46,52 @@ K8s Secret `ar-pull` (kubernetes.io/dockerconfigjson, refresh 30m)
 Pod pulls from us-east4-docker.pkg.dev/rockingham-homelab/projects/<workload>:<tag>
 ```
 
-The cluster-pull SA's role
-(`roles/artifactregistry.reader`, scoped to the `projects` repo only)
-is the only thing constraining what the resulting token can do. The
-generator does not constrain scope; the IAM does.
+The cluster-pull SA's role (`roles/artifactregistry.reader`, scoped to
+the `projects` repo only) is the only thing constraining what the
+resulting token can do. The generator does not constrain scope; the
+IAM does.
 
-## Why a JSON key and not native cluster→GCP WIF
+## Why cluster→GCP WIF and not a JSON key
 
 The "no long-lived keys" stance is satisfied for the ARC push path
-(GitHub OIDC → GCP WIF, no key anywhere). The cluster pull path
-falls short of that bar because Talos has no GKE-style workload
-identity: minting GCP credentials from a Pod requires either a
-JSON key or a public Talos OIDC discovery document configured as
-a trusted identity provider on a GCP WIF pool. Publishing the
-cluster's OIDC discovery is meaningful work — Talos's default
-issuer URL is cluster-internal, so it needs a separate
-GCS-bucket-backed endpoint plus the matching `--service-account-issuer`
-Talos config — and is out of scope for this issue.
+(GitHub OIDC → GCP WIF, no key anywhere). The cluster pull path used
+to fall short of that bar — Talos has no GKE-style metadata server,
+and the early shape (#125) accepted a JSON key in GSM as a bounded
+shortcut. #139 closed the gap by:
 
-The compromise the canary lives with:
+- Publishing the cluster's OIDC discovery document + JWKS at a
+  public URL (a public-read GCS bucket served at
+  `https://storage.googleapis.com/rockingham-homelab-oidc`).
+- Pointing `kube-apiserver --service-account-issuer` at that URL
+  via `talos/patches/cluster/oidc-issuer.yaml`.
+- Adding a dedicated `cluster` WIF pool with a `talos` provider
+  trusting that issuer.
+- Binding `tf-ci-cluster-pull` to a single
+  `principal://…/subject/system:serviceaccount:ar-canary:ar-canary-puller`,
+  so only the puller SA above can impersonate it.
 
-- The JSON key is long-lived but lives in GSM, not in TF state or
-  in Git. Same posture as `argocd-repo-ssh-key`,
-  `arc-app-private-key`, and `talos-cluster-secrets` — three other
-  load-bearing credentials this repo accepts in GSM.
-- The key's role is repo-scoped (`roles/artifactregistry.reader`
-  on `projects`), so a leak grants read on preview-env images only.
-- The dockerconfigjson Pods reference is short-lived (30 min); the
-  long-lived credential never leaves the
-  `ar-canary` (eventually: `projects-*`) namespace.
-- Migrating to cluster→GCP WIF is a one-resource swap: replace the
-  ExternalSecret + GCRAccessToken pair with a Pod-mounted SA token
-  exchange. Nothing about the AR repo, the SAs, or the IAM
-  bindings changes.
+The cluster mints a fresh JWT per token-exchange, signed by its own
+key, with the projected SA as the subject. Nothing long-lived is
+stored anywhere on the pull path.
+
+The bound posture is wider in *who* can impersonate than the JSON-key
+shortcut allowed (anything that could read GSM secrets could, in
+principle, decode the key), but narrower in *what* a leak grants — a
+stolen projected JWT expires within an hour and cannot be replayed
+after the cluster's signing key rotates.
 
 ## End-to-end verification
 
-After `tofu apply` in `terraform/gcp/` has landed the AR repo, the
-two SAs, and the GSM container, and after ArgoCD has reconciled
-this addon:
+Preconditions:
+
+- `tofu apply` in `terraform/gcp/` has landed the AR repo, the SAs,
+  the cluster WIF pool/provider, and the OIDC bucket.
+- The Talos issuer patch (`talos/patches/cluster/oidc-issuer.yaml`)
+  has been applied to every control plane.
+- The cluster's JWKS has been uploaded to
+  `gs://rockingham-homelab-oidc/openid/v1/jwks` (see talos/README.md).
+- ArgoCD has reconciled this addon (`kubectl -n argocd get app ar-canary`
+  shows `Synced + Healthy`).
 
 1. Confirm the dockerconfigjson Secret is populated:
 
@@ -83,9 +101,21 @@ this addon:
    ```
 
    Expect a single `auths` entry for `us-east4-docker.pkg.dev` with
-   a non-empty `password` field. If `ar-pull` is missing, check
-   the chain: `kubectl -n ar-canary get externalsecret`,
-   `kubectl -n external-secrets logs deploy/external-secrets`.
+   a non-empty `password` field. If `ar-pull` is missing, walk the
+   chain:
+
+   - `kubectl -n ar-canary get externalsecret ar-pull -o yaml` —
+     the status conditions explain why ESO couldn't render the
+     dockerconfigjson.
+   - `kubectl -n external-secrets logs deploy/external-secrets` —
+     look for "unable to exchange token" (STS rejection, usually
+     means the JWKS hasn't been uploaded or doesn't match the
+     cluster's current signing key), or "permission denied"
+     (workloadIdentityUser binding missing or pointing at the wrong
+     principal).
+   - `curl -s https://storage.googleapis.com/rockingham-homelab-oidc/openid/v1/jwks | jq .keys[].kid`
+     and compare against `kubectl get --raw /openid/v1/jwks | jq .keys[].kid`
+     — they must match.
 
 2. Push a test image as the operator (one-time):
 
@@ -122,7 +152,12 @@ this addon:
 ## Cleanup
 
 When the preview-env baseline ([#127](https://github.com/RaptGroup/homelab/issues/127))
-templates the `ExternalSecret` + `GCRAccessToken` pair into every
-preview namespace, this entire directory is deleted in the same PR.
-The TF-managed SAs, IAM bindings, AR repo, and GSM key container
-stay; only the cluster-side YAML moves to the preview-env baseline.
+templates the `ServiceAccount` + `GCRAccessToken` + `ExternalSecret`
+shape into every preview namespace, this entire directory is deleted
+in the same PR. The TF-managed AR repo, the SAs (`tf-ci-cluster-pull`,
+`tf-ci-arc-push`), the cluster WIF pool/provider, and the OIDC bucket
+all stay; only the cluster-side YAML moves to the preview-env
+baseline. The cluster WIF binding likely also widens at that point
+from a single `principal://…/subject/system:serviceaccount:ar-canary:ar-canary-puller`
+to a `principalSet://…/attribute.namespace/<preview-pattern>` so one
+binding covers every preview namespace at once.
