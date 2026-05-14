@@ -894,6 +894,14 @@ resource "google_iam_workload_identity_pool_provider" "cluster_talos" {
 # preview namespace, replace this with a principalSet on
 # `attribute.namespace` matching the preview-env naming scheme so a
 # single binding covers every preview at once.
+#
+# This is the active grant path for the cluster→AR pull: ESO v2.x's
+# `auth.workloadIdentityFederation` reader on the `ar-canary-puller`
+# ServiceAccount picks up the `iam.gke.io/gcp-service-account`
+# annotation, calls iamcredentials:generateAccessToken to impersonate
+# tf-ci-cluster-pull (authorized by this binding), and returns that SA's
+# token — which carries roles/artifactregistry.reader on the `projects`
+# repo via the per-repo binding below.
 resource "google_service_account_iam_member" "cluster_pull_wif_user" {
   service_account_id = google_service_account.cluster_pull.name
   role               = "roles/iam.workloadIdentityUser"
