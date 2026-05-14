@@ -49,7 +49,7 @@
 # fetches the SA, reads the annotation, and sets the STS exchange's
 # service-account-impersonation-url from it. The newer
 # `gcpServiceAccountEmail` field that would set this inline was added
-# upstream on 2026-05-13 and is not yet in v1.3.2; revisit on the next
+# upstream on 2026-05-13 and is not yet in v2.4.1; revisit on the next
 # ESO bump.
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: GCRAccessToken
