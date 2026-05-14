@@ -51,7 +51,7 @@ resource "kubernetes_secret" "eso_gcp_sa" {
 # this store by name (`gsm`). Project ID is read from terraform/gcp state.
 resource "kubectl_manifest" "cluster_secret_store_gsm" {
   yaml_body = yamlencode({
-    apiVersion = "external-secrets.io/v1beta1"
+    apiVersion = "external-secrets.io/v1"
     kind       = "ClusterSecretStore"
     metadata = {
       name = "gsm"

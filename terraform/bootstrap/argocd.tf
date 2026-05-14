@@ -36,7 +36,7 @@ resource "helm_release" "argocd" {
 # this Secret by URL and uses the key automatically.
 resource "kubectl_manifest" "argocd_repo_credentials" {
   yaml_body = yamlencode({
-    apiVersion = "external-secrets.io/v1beta1"
+    apiVersion = "external-secrets.io/v1"
     kind       = "ExternalSecret"
     metadata = {
       name      = "argocd-repo-homelab"

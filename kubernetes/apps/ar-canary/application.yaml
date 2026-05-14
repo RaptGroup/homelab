@@ -1,23 +1,20 @@
 # Canary slice for the preview-environment Artifact Registry repo
-# (issue #125 / ADR-0006). Owns:
+# (issues #125 / #139 / ADR-0006). Owns:
 #
 #   - The `ar-canary` namespace.
-#   - The ExternalSecret that syncs the cluster-pull SA's JSON key
-#     from GSM.
-#   - The ESO GCRAccessToken Generator that exchanges that key for a
-#     short-lived OAuth access token every 30 minutes.
+#   - A dedicated `ar-canary-puller` ServiceAccount used as the source
+#     identity for the cluster→GCP WIF token exchange.
+#   - The ESO GCRAccessToken Generator that exchanges a projected
+#     `ar-canary-puller` token for a short-lived GCP OAuth access
+#     token via Workload Identity Federation — no JSON key anywhere.
 #   - The ExternalSecret that wraps the generator output as a
 #     `kubernetes.io/dockerconfigjson` Secret named `ar-pull` —
 #     the imagePullSecret real workloads reference.
-#   - A one-shot Job that pulls a private image from the repo as the
-#     end-to-end verification step.
 #
-# This addon exists as the canary slice referenced in issue #125's
-# cluster-pull acceptance criterion. When the preview-env baseline
-# (#127) lands, the ExternalSecret + Generator pair here gets
-# templated into every preview namespace and this directory goes
-# away; until then, ar-canary is the single namespace that proves the
-# pull path works.
+# This addon exists as the canary slice referenced in #125's
+# cluster-pull acceptance criterion and #139's keyless-WIF closure.
+# When the preview-env baseline templates the puller SA + generator
+# into every preview namespace, this directory goes away.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

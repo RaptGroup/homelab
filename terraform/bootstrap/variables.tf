@@ -79,9 +79,9 @@ variable "cert_manager_chart_version" {
 }
 
 variable "external_secrets_chart_version" {
-  description = "external-secrets Helm chart version."
+  description = "external-secrets Helm chart version. 1.3.2 is the minimum that ships the v1 GCPSMAuth.workloadIdentityFederation shape consumed by kubernetes/apps/ar-canary/'s GCRAccessToken generator (#139). v2.x removed the Alibaba + Device42 providers and is fine, but v1.3.2 is the last v1.x and the smallest delta from 0.10.7. v1.0.0 also stopped serving external-secrets.io/v1beta1, so every ESO resource in this repo lives at external-secrets.io/v1 — schema unchanged, apiVersion only."
   type        = string
-  default     = "0.10.7"
+  default     = "1.3.2"
 }
 
 variable "argocd_chart_version" {

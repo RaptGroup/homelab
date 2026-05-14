@@ -104,13 +104,23 @@ output "arc_workload_identity_provider" {
 }
 
 output "cluster_pull_service_account_email" {
-  description = "Email of the in-cluster Artifact Registry pull SA. Referenced by the GCRAccessToken generator under kubernetes/apps/ar-canary/."
+  description = "Email of the in-cluster Artifact Registry pull SA. Referenced by the GCRAccessToken generator under kubernetes/apps/ar-canary/ as the impersonation target after the cluster WIF token exchange."
   value       = google_service_account.cluster_pull.email
 }
 
-output "cluster_pull_sa_key_secret_id" {
-  description = "GSM secret ID holding the cluster-pull SA's JSON key. Versions are uploaded out of band (see terraform/gcp/README.md). The cluster-side ExternalSecret in kubernetes/apps/ar-canary/ references this secret name verbatim."
-  value       = google_secret_manager_secret.cluster_pull_sa_key.secret_id
+output "cluster_oidc_issuer" {
+  description = "Public URL serving the cluster's OIDC discovery document + JWKS. Configured as kube-apiserver's --service-account-issuer in talos/patches/cluster/oidc-issuer.yaml."
+  value       = local.cluster_oidc_issuer
+}
+
+output "cluster_oidc_bucket" {
+  description = "Name of the GCS bucket fronting the cluster's OIDC issuer. Operator uploads the cluster's JWKS to gs://<bucket>/openid/v1/jwks after every Talos secret rotation; see talos/README.md."
+  value       = google_storage_bucket.cluster_oidc.name
+}
+
+output "cluster_wif_provider" {
+  description = "Full resource name of the cluster's OIDC WIF provider. Plugged into kubernetes/apps/ar-canary/manifests/gcr-access-token.yaml as the STS audience for the projected K8s SA token exchange."
+  value       = google_iam_workload_identity_pool_provider.cluster_talos.name
 }
 
 output "cloudflare_api_token_secret_id" {

@@ -740,21 +740,19 @@ resource "google_service_account_iam_member" "arc_push_wif_user" {
 }
 
 # In-cluster pull SA. roles/artifactregistry.reader scoped to the
-# `projects` repo. Talos has no native GKE-style workload identity, so
-# instead of a cluster→GCP WIF binding (which would need the cluster's
-# OIDC discovery document published publicly — a meaningfully bigger
-# project), the cluster authenticates as this SA via a JSON key whose
-# value lives in GSM and is uploaded out of band. ESO syncs the key
-# into the cluster, and an ESO `GCRAccessToken` generator exchanges
-# it for a short-lived OAuth token rotated every 30 minutes (the
-# dockerconfigjson Pods reference is short-lived; the underlying SA
-# key is the long-lived credential, bounded by GSM and by the
-# repo-scoped reader role). See kubernetes/apps/ar-canary/.
+# `projects` repo. Impersonated from in-cluster Pods via the cluster's
+# own Workload Identity Federation pool (see the `cluster_oidc_*` and
+# `cluster_wif_*` resources below): a Pod-mounted projected K8s SA
+# token is exchanged at GCP STS for a federated access token, then
+# impersonated into this SA. No JSON key — same posture as the ARC
+# push path has via GitHub OIDC. The roles/artifactregistry.reader
+# scope is the only thing constraining what the resulting token can
+# do. See kubernetes/apps/ar-canary/.
 resource "google_service_account" "cluster_pull" {
   project      = google_project.lab.project_id
   account_id   = var.cluster_pull_sa_id
   display_name = "Artifact Registry pull (cluster)"
-  description  = "In-cluster identity that authenticates pull requests to the `projects` AR repo. roles/artifactregistry.reader scoped to the repo; cannot read anything else in the project. Key material lives in GSM; see the cluster-pull-sa-key secret container."
+  description  = "In-cluster identity for pulls from the `projects` AR repo. roles/artifactregistry.reader scoped to the repo; cannot read anything else. Impersonable via the cluster WIF binding only — no JSON key anywhere."
 
   depends_on = [google_project_service.enabled]
 }
@@ -767,40 +765,139 @@ resource "google_artifact_registry_repository_iam_member" "cluster_pull_reader" 
   member     = "serviceAccount:${google_service_account.cluster_pull.email}"
 }
 
-# GSM container for the cluster-pull SA's JSON key. Same shape as
-# argocd-repo-ssh-key / talos-cluster-secrets above: TF owns the
-# container so the cluster-side ExternalSecret can reference a stable
-# name on a fresh project; the value is uploaded out of band so a
-# long-lived credential is never round-tripped through TF state.
+# --- Cluster OIDC issuer hosting + cluster WIF -----------------------------
 #
-# Mint and upload (after `tofu apply` here):
+# The Talos cluster mints its own JWTs (kube-apiserver TokenRequest API)
+# and uses them as the input to a GCP STS token exchange — same shape
+# the ARC push path has via GitHub OIDC, but with the cluster as the
+# OP. For GCP STS to validate those JWTs it has to fetch the cluster's
+# OIDC discovery document and JWKS from a publicly-reachable URL; Talos
+# defaults its issuer to a cluster-internal address, which is
+# unreachable from outside the LAN.
 #
-#   gcloud iam service-accounts keys create /tmp/cluster-pull.json \
-#     --iam-account=tf-ci-cluster-pull@rockingham-homelab.iam.gserviceaccount.com \
-#     --project=rockingham-homelab
-#   gcloud secrets versions add tf-ci-cluster-pull-key \
-#     --project=rockingham-homelab \
-#     --data-file=/tmp/cluster-pull.json
-#   shred -u /tmp/cluster-pull.json
+# The cheapest pattern for "publicly-reachable URL serving two small
+# static JSON objects" is a public-read GCS bucket served directly via
+# `https://storage.googleapis.com/<bucket>/...`. The bucket's hostname
+# already has a valid TLS cert and a stable URL shape — no Cloud Load
+# Balancer (~$20/mo on a homelab budget), no custom DNS, no ACM cert
+# rotation. The trade-off is the URL doesn't live under jackhall.dev;
+# acceptable because nothing reads this URL by hand — kube-apiserver
+# advertises it in `iss` and GCP STS fetches it.
 #
-# Rotation: re-run those three commands. ESO picks up the new version
-# at its next refresh (default 1h) and the next GCRAccessToken refresh
-# (30m) starts using it.
-resource "google_secret_manager_secret" "cluster_pull_sa_key" {
-  project   = google_project.lab.project_id
-  secret_id = "tf-ci-cluster-pull-key"
+# Issuer URL: https://storage.googleapis.com/<var.cluster_oidc_bucket>
+# Discovery: <issuer>/.well-known/openid-configuration  (TF-managed below)
+# JWKS:      <issuer>/openid/v1/jwks                    (uploaded out of band)
+#
+# The JWKS contents come from the live cluster's signing public keys
+# and have to be uploaded after each Talos secret rotation. See
+# talos/README.md for the operator-side recipe.
 
-  labels = {
-    purpose  = "addon-credential"
-    addon    = "ar-canary"
-    rotation = "manual"
-  }
+locals {
+  cluster_oidc_issuer = "https://storage.googleapis.com/${google_storage_bucket.cluster_oidc.name}"
+}
 
-  replication {
-    auto {}
-  }
+resource "google_storage_bucket" "cluster_oidc" {
+  project  = google_project.lab.project_id
+  name     = var.cluster_oidc_bucket
+  location = var.cluster_oidc_bucket_location
+
+  uniform_bucket_level_access = true
+  # `inherited` rather than `enforced` because WIF discovery is
+  # unauthenticated by spec — GCP STS fetches the discovery doc and
+  # JWKS without any credentials, so allUsers must be able to read
+  # objects. The contents are non-sensitive (issuer metadata + public
+  # signing keys), but flagging the deviation here so a future reader
+  # doesn't reflexively "lock it down" by enforcing PAP.
+  public_access_prevention = "inherited"
+  force_destroy            = false
 
   depends_on = [google_project_service.enabled]
+}
+
+resource "google_storage_bucket_iam_member" "cluster_oidc_public_read" {
+  bucket = google_storage_bucket.cluster_oidc.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
+}
+
+# The discovery document is fully derived from the issuer URL — TF
+# generates and uploads it so a fresh project bootstraps to a working
+# state without an extra manual gsutil step. The JWKS is the cluster-
+# specific half and stays out-of-band (see talos/README.md).
+resource "google_storage_bucket_object" "cluster_oidc_discovery" {
+  bucket       = google_storage_bucket.cluster_oidc.name
+  name         = ".well-known/openid-configuration"
+  content_type = "application/json"
+  content = jsonencode({
+    issuer                                = local.cluster_oidc_issuer
+    jwks_uri                              = "${local.cluster_oidc_issuer}/openid/v1/jwks"
+    response_types_supported              = ["id_token"]
+    subject_types_supported               = ["public"]
+    id_token_signing_alg_values_supported = ["RS256"]
+  })
+  cache_control = "public, max-age=300"
+}
+
+# WIF pool dedicated to the cluster. Separate from `github-actions` so
+# the pool boundary advertises the identity source. Per-namespace trust
+# narrows on the SA-level binding below, not at the pool — same shape
+# the github pool uses (provider attribute_condition + per-SA
+# workloadIdentityUser).
+resource "google_iam_workload_identity_pool" "cluster" {
+  project                   = google_project.lab.project_id
+  workload_identity_pool_id = var.cluster_wif_pool_id
+  display_name              = "Rockingham cluster"
+  description               = "OIDC pool trusted by the Talos `rockingham` cluster; per-namespace/SA trust is enforced on the SA-level workloadIdentityUser binding."
+
+  depends_on = [google_project_service.enabled]
+}
+
+# Provider trusting the cluster's published OIDC issuer.
+#
+# attribute_mapping pulls subject, namespace, and SA name out of the
+# JWT. `google.subject` is the only required mapping; the additional
+# attributes are extracted so a future principalSet on
+# attribute.namespace can scope an SA binding to a namespace pattern
+# (the preview-env evolution) without re-doing the federation.
+#
+# CEL bracket syntax `assertion["kubernetes.io"][...]` is required
+# because the K8s SA JWT claim key contains a dot.
+#
+# No attribute_condition — there's nothing to gate at the pool level
+# beyond the issuer trust itself. A JWT minted by another K8s cluster
+# would need to match the issuer URL (impossible — GCS bucket name is
+# unique), and a JWT for an unbound SA still cannot impersonate any
+# GCP SA without an explicit workloadIdentityUser binding.
+resource "google_iam_workload_identity_pool_provider" "cluster_talos" {
+  project                            = google_project.lab.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.cluster.workload_identity_pool_id
+  workload_identity_pool_provider_id = var.cluster_wif_provider_id
+  display_name                       = "Talos OIDC"
+  description                        = "Trusts JWTs minted by the Talos cluster's kube-apiserver (issuer: ${local.cluster_oidc_issuer})."
+
+  attribute_mapping = {
+    "google.subject"           = "assertion.sub"
+    "attribute.namespace"      = "assertion[\"kubernetes.io\"][\"namespace\"]"
+    "attribute.serviceaccount" = "assertion[\"kubernetes.io\"][\"serviceaccount\"][\"name\"]"
+  }
+
+  oidc {
+    issuer_uri = local.cluster_oidc_issuer
+  }
+
+  depends_on = [google_storage_bucket_object.cluster_oidc_discovery]
+}
+
+# Narrow workloadIdentityUser binding: only the puller SA inside
+# var.cluster_pull_k8s_namespace can impersonate tf-ci-cluster-pull.
+# When the preview-env baseline templates a puller SA into every
+# preview namespace, replace this with a principalSet on
+# `attribute.namespace` matching the preview-env naming scheme so a
+# single binding covers every preview at once.
+resource "google_service_account_iam_member" "cluster_pull_wif_user" {
+  service_account_id = google_service_account.cluster_pull.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.cluster_pull_k8s_namespace}:${var.cluster_pull_k8s_sa}"
 }
 
 # --- Cloudflare Tunnel: public preview env path (ADR-0006) -----------------

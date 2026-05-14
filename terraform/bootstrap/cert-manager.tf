@@ -52,7 +52,7 @@ resource "google_secret_manager_secret_version" "cert_manager_dns01" {
 # ESO syncs the DNS-01 key from GSM into a K8s Secret cert-manager reads.
 resource "kubectl_manifest" "cert_manager_dns01_external_secret" {
   yaml_body = yamlencode({
-    apiVersion = "external-secrets.io/v1beta1"
+    apiVersion = "external-secrets.io/v1"
     kind       = "ExternalSecret"
     metadata = {
       name      = "cert-manager-dns01-key"

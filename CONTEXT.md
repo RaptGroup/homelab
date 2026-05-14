@@ -459,26 +459,29 @@ anything else in `rockingham-homelab`. Provisioned by
   plan/apply) → per-repo `workloadIdentityUser` binding. No
   key material anywhere.
 - **`tf-ci-cluster-pull`** — `roles/artifactregistry.reader` on
-  the `projects` repo. Consumed by in-cluster workloads. A JSON
-  key lives in the GSM container `tf-ci-cluster-pull-key`
-  (value uploaded out of band, same pattern as
-  `argocd-repo-ssh-key`) and is exchanged in-cluster by an ESO
-  `GCRAccessToken` generator for a short-lived dockerconfigjson
-  rotated every 30 minutes; see [`ar-canary`](#ar-canary). The
-  long-lived credential is the SA key in GSM. Full
-  cluster→GCP WIF (no key at all) would need a publicly-reachable
-  Talos OIDC discovery endpoint plus a WIF pool trusting it —
-  deliberately out of scope for #125.
+  the `projects` repo. Consumed by in-cluster workloads.
+  Impersonated via Workload Identity Federation against the
+  cluster's own OIDC issuer: a Pod-mounted projected K8s SA token
+  is exchanged at GCP STS for a federated access token, then
+  impersonated into this SA. Same posture the ARC push path has
+  via GitHub OIDC — no key material anywhere. The cluster-side
+  half lives in [`ar-canary`](#ar-canary); the GCP-side WIF pool
+  + provider, the OIDC bucket fronting the cluster's discovery
+  doc + JWKS, and the per-SA `workloadIdentityUser` binding all
+  live in `terraform/gcp/`. ESO's `GCRAccessToken` generator
+  bundles the STS exchange + SA impersonation into one
+  ~30-min-refreshed dockerconfigjson Pods consume as
+  `imagePullSecrets`.
 
 ### `ar-canary`
 
 The canary namespace that exercises the AR cluster-pull path
 end-to-end while the preview-env baseline is still in flight.
-Runs the `ExternalSecret` + `GCRAccessToken` + dockerconfigjson
+Runs the `ServiceAccount` + `GCRAccessToken` (WIF) + dockerconfigjson
 chain that the preview-env baseline will eventually template
 into every preview namespace; lives under
 `kubernetes/apps/ar-canary/` and gets deleted in the PR that
-lands that baseline. See ADR-0006 / #125.
+lands that baseline. See ADR-0006 / #125 / #139.
 
 ### Preview-environment workflow
 

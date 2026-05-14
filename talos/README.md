@@ -4,8 +4,13 @@ Machine configuration for the `rockingham` Talos cluster.
 
 ## Layout
 
-- `patches/nodes/<hostname>.yaml` — per-node machine config patches (hostname,
-  static address, install disk, VIP membership). Version-controlled.
+- `patches/cluster/<topic>.yaml` — cluster-level machine config patches
+  applied to every control plane (e.g. kube-apiserver flags). Same
+  content goes onto every CP because Talos's `cluster:` section is
+  cluster-wide.
+- `patches/nodes/<hostname>.yaml` — per-node machine config patches
+  (hostname, static address, install disk, VIP membership).
+  Version-controlled.
 - `_out/` — generated artifacts. Gitignored. Contains `secrets.yaml`,
   `talosconfig`, base `controlplane.yaml` / `worker.yaml`, and per-node
   patched configs.
@@ -106,10 +111,17 @@ talosctl gen config rockingham https://192.168.1.240:6443 \
   --output-dir talos/_out/
 
 # 3. Produce the per-node config for cp-01 by patching the base controlplane.
+#    Order matters: cluster-level patches go first so per-node patches
+#    can still override anything they need to.
 talosctl machineconfig patch talos/_out/controlplane.yaml \
+  --patch @talos/patches/cluster/oidc-issuer.yaml \
   --patch @talos/patches/nodes/cp-01.yaml \
   -o talos/_out/cp-01.yaml
 ```
+
+Workers don't run kube-apiserver, so the cluster-level patch is a no-op
+on `talos/_out/worker.yaml` — including it is harmless but only the
+control-plane configs need it.
 
 ## Applying to a node in maintenance mode
 
@@ -150,6 +162,85 @@ For each additional control plane node, write a `patches/nodes/<host>.yaml`
 patch (matching its NIC, address, install disk) and repeat the patch +
 apply-config steps. Workers use `worker.yaml` as the base instead of
 `controlplane.yaml`.
+
+## OIDC issuer for cluster→GCP WIF
+
+Default `--service-account-issuer` is cluster-internal
+(`https://kubernetes.default.svc.cluster.local`), which is unreachable
+from outside the LAN. GCP STS needs to fetch the cluster's OIDC
+discovery document + JWKS to validate the projected K8s SA tokens it
+exchanges for federated access tokens, so the issuer URL has to point
+at a publicly-reachable endpoint.
+
+The chosen pattern: a public-read GCS bucket served at
+`https://storage.googleapis.com/rockingham-homelab-oidc`. Cheapest URL
+shape with a valid TLS cert (no Cloud LB, no custom DNS, no ACM
+rotation). The bucket and its `/.well-known/openid-configuration`
+object are TF-managed in `terraform/gcp/`; the `/openid/v1/jwks`
+object is operator-uploaded out of band because its contents come
+from the live cluster.
+
+`patches/cluster/oidc-issuer.yaml` sets the apiserver flags. It is
+applied alongside the per-node CP patches in the
+`talosctl machineconfig patch` command above. Workers don't run
+kube-apiserver, so it's a no-op there.
+
+### Rolling the issuer onto a running cluster
+
+This is a hard cut — changing `--service-account-issuer` invalidates
+every existing projected SA token in the cluster, so anything holding
+an old-issuer JWT (in-cluster controllers, webhook clients) gets
+auth errors until kubelet refreshes its token (~80% of token expiry,
+typically <1 h for default 1 h tokens, much faster for short-lived
+projections). Plan the window:
+
+1. Regenerate the patched cp configs locally with the new
+   `--patch` flag (the command in "First-time generation" above).
+2. Apply to each control plane in turn. Talos restarts the apiserver
+   automatically:
+
+   ```sh
+   for ip in 192.168.1.245 192.168.1.246 192.168.1.247; do
+     talosctl --nodes "$ip" apply-config \
+       --file talos/_out/cp-XX.yaml
+   done
+   ```
+
+   (Substitute the correct per-node file for each `$ip`.)
+
+3. Once the apiserver on at least one CP is back up, fetch the JWKS
+   that ships the cluster's current signing public keys and push it
+   to the OIDC bucket:
+
+   ```sh
+   kubectl get --raw /openid/v1/jwks > /tmp/jwks.json
+   gcloud storage cp /tmp/jwks.json \
+     gs://rockingham-homelab-oidc/openid/v1/jwks \
+     --content-type=application/json \
+     --cache-control='public, max-age=300'
+   shred -u /tmp/jwks.json
+   ```
+
+4. Verify external resolvers see the discovery doc and JWKS:
+
+   ```sh
+   curl -s https://storage.googleapis.com/rockingham-homelab-oidc/.well-known/openid-configuration | jq .
+   curl -s https://storage.googleapis.com/rockingham-homelab-oidc/openid/v1/jwks | jq .
+   ```
+
+   The discovery doc's `issuer` field must match the URL it was
+   fetched from. The JWKS must contain at least one key whose `kid`
+   matches the `kid` in a freshly-minted projected SA token:
+
+   ```sh
+   kubectl create token default -n default --duration=10m \
+     --audience=//iam.googleapis.com/projects/$(gcloud projects describe rockingham-homelab --format='value(projectNumber)')/locations/global/workloadIdentityPools/cluster/providers/talos \
+     | cut -d. -f1 | base64 -d 2>/dev/null | jq .kid
+   ```
+
+5. After every Talos secret rotation (`talosctl gen secrets` →
+   re-apply), re-run step 3. The JWKS is the only operator-side
+   refresh needed — the discovery doc is static and TF-managed.
 
 ## Backing up `secrets.yaml`
 
