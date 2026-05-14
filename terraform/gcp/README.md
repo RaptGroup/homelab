@@ -16,6 +16,11 @@ dedicated project (`rockingham-homelab` by default):
   uploaded out of band) backing up `talos/_out/secrets.yaml`. See
   [`talos/README.md`](../../talos/README.md) for the upload + restore
   commands.
+- GCS bucket `rockingham-longhorn-backups` + service account
+  `longhorn-backup` (bucket-scoped `roles/storage.objectAdmin`) +
+  GSM container `longhorn-backup-credentials` for Longhorn off-site
+  backups via the S3 interoperability API. HMAC mint + upload are
+  operator steps documented below.
 - Workload Identity Federation pool + GitHub OIDC provider, plus two
   CI service accounts: a plan-only SA (`roles/viewer`) consumed by the
   [`terraform-plan` workflow](../../.github/workflows/terraform-plan.yml),
@@ -412,6 +417,89 @@ Re-run after every Talos `talosctl gen secrets` rotation. WIF token
 exchange fails until the JWKS contains the public half of the
 cluster's current signing key.
 
+## Longhorn off-site backups (GCS via S3 interop)
+
+The `rockingham-longhorn-backups` bucket holds Longhorn snapshot /
+backup data written through the bucket's S3 interoperability endpoint.
+The pieces this root provisions:
+
+| Resource                                                | Notes                                                                                  |
+|---------------------------------------------------------|----------------------------------------------------------------------------------------|
+| `google_storage_bucket.longhorn_backups`                | Uniform BLA + `public_access_prevention = enforced`. No versioning, no lifecycle rule. |
+| `google_service_account.longhorn_backup`                | S3-interop identity. `roles/storage.objectAdmin` bound at the bucket, not the project. |
+| `google_secret_manager_secret.longhorn_backup_credentials` | Container only — value uploaded out of band (see below).                              |
+
+The HMAC pair itself is **not** a Terraform resource. Same rationale
+as [`talos-cluster-secrets`](#bootstrap-from-scratch) / `argocd-repo-ssh-key`:
+keeping a long-lived plaintext credential out of TF state. The
+operator mints the HMAC against the SA via `gcloud storage hmac create`
+and uploads the resulting `{access_id, secret}` JSON to GSM in two
+steps. Deleting `longhorn_backup` here revokes any HMAC keys owned by
+the SA implicitly, so Terraform still governs the lifecycle even
+though it doesn't own the secret value.
+
+### Mint + upload (one-time bootstrap)
+
+```sh
+gcloud storage hmac create \
+  $(tofu output -raw longhorn_backup_service_account_email) \
+  --project=$(tofu output -raw project_id) \
+  --format='json(accessId,secret)' > /tmp/longhorn-hmac.json
+
+jq -c '{access_id: .accessId, secret: .secret}' /tmp/longhorn-hmac.json \
+  | gcloud secrets versions add \
+      $(tofu output -raw longhorn_backup_credentials_secret_id) \
+      --project=$(tofu output -raw project_id) \
+      --data-file=-
+
+shred -u /tmp/longhorn-hmac.json
+```
+
+After the upload propagates (ESO refresh, default 1h), Longhorn's UI
+flips its backup-target status from `Unhealthy` (no credential yet)
+to `Healthy`. The `<region>` segment in `kubernetes/apps/longhorn/helm-values.yaml`'s
+`defaultBackupStore.backupTarget` URL must be the lowercased form of
+`longhorn_backups_bucket_location` — a mismatch surfaces as a
+SignatureDoesNotMatch error at the GCS edge.
+
+### Rotation
+
+```sh
+# 1. Mint the new HMAC (the SA may hold up to 5 active keys; older
+#    keys remain valid until step 5).
+NEW_PAIR=$(gcloud storage hmac create \
+  $(tofu output -raw longhorn_backup_service_account_email) \
+  --project=$(tofu output -raw project_id) \
+  --format='json(accessId,secret)')
+
+# 2. Upload the new pair as a new GSM version. ESO picks it up at the
+#    next refresh; Longhorn picks up the new K8s Secret value at its
+#    next backup-target reload (`pollInterval` in defaultBackupStore).
+echo "$NEW_PAIR" \
+  | jq -c '{access_id: .accessId, secret: .secret}' \
+  | gcloud secrets versions add \
+      $(tofu output -raw longhorn_backup_credentials_secret_id) \
+      --project=$(tofu output -raw project_id) \
+      --data-file=-
+
+# 3. Watch the Longhorn UI; once the backup-target status is Healthy
+#    on the new key (or after ~2h conservatively), deactivate + delete
+#    the old HMAC.
+OLD_ACCESS_ID=...   # from `gcloud storage hmac list --service-account=...`
+gcloud storage hmac update "$OLD_ACCESS_ID" --deactivate \
+  --project=$(tofu output -raw project_id)
+gcloud storage hmac delete "$OLD_ACCESS_ID" \
+  --project=$(tofu output -raw project_id)
+```
+
+The bucket carries no GCS-side lifecycle rule because Longhorn owns
+backup retention through its `RecurringJob` CRDs
+(`kubernetes/apps/longhorn/manifests/recurring-jobs.yaml`). A bucket-
+level TTL would silently delete blocks Longhorn still references,
+breaking restore. If a backstop is ever wanted, it must be set
+*higher* than the longest `RecurringJob.spec.retain` window across
+all volumes.
+
 ## Outputs
 
 | Output                                | Used by                                                          |
@@ -433,3 +521,7 @@ cluster's current signing key.
 | `cluster_oidc_issuer`                 | Operator → Talos config (`--service-account-issuer`); also baked into the cluster WIF provider's `issuer_uri` |
 | `cluster_oidc_bucket`                 | Operator → `gcloud storage cp` of the cluster JWKS (one-time after each Talos secret rotation) |
 | `cluster_wif_provider`                | Operator → ESO generator `auth.workloadIdentityFederation.audience` in `kubernetes/apps/ar-canary/` |
+| `longhorn_backup_service_account_email` | Operator → `gcloud storage hmac create` (HMAC mint)            |
+| `longhorn_backups_bucket`             | Sanity: must match `<bucket>` in Longhorn's `backupTarget` URL   |
+| `longhorn_backups_bucket_location`    | Sanity: lowercased, must match `<region>` in `backupTarget` URL  |
+| `longhorn_backup_credentials_secret_id` | Operator → `gcloud secrets versions add` (HMAC pair upload)    |
