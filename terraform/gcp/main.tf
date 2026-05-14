@@ -900,6 +900,120 @@ resource "google_service_account_iam_member" "cluster_pull_wif_user" {
   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.cluster_pull_k8s_namespace}:${var.cluster_pull_k8s_sa}"
 }
 
+# --- Longhorn off-site backups (GCS via S3 interop) ------------------------
+#
+# Longhorn writes snapshot/backup data to GCS through the bucket's S3
+# interoperability endpoint. The pieces:
+#
+#   1. GCS bucket scoped to backup data only.
+#   2. Dedicated SA with `roles/storage.objectAdmin` BOUND TO THE BUCKET,
+#      not project-wide — leaking the SA's HMAC pair cannot reach anything
+#      else in the project.
+#   3. GSM container `longhorn-backup-credentials` holding the HMAC
+#      `{access_id, secret}` JSON. ESO syncs it into a K8s Secret in
+#      `longhorn-system` (kubernetes/apps/longhorn/manifests/external-secret.yaml),
+#      which Longhorn references via `defaultBackupStore.backupTargetCredentialSecret`.
+#
+# The HMAC key itself is deliberately NOT a TF resource. Same rationale as
+# `talos-cluster-secrets` / `argocd-repo-ssh-key`: keeping a long-lived
+# plaintext credential out of TF state. The operator mints the HMAC out of
+# band via `gcloud storage hmac create` (one command, atomic) and uploads
+# the resulting JSON to GSM — both bytes land only in GSM, never in the
+# state bucket. Deleting `google_service_account.longhorn_backup` here
+# revokes the HMAC implicitly (HMAC keys are owned by the SA), so TF still
+# governs the lifecycle even though it doesn't own the secret value. See
+# terraform/gcp/README.md for the mint + upload + rotation commands.
+resource "google_service_account" "longhorn_backup" {
+  project      = google_project.lab.project_id
+  account_id   = var.longhorn_backup_sa_id
+  display_name = "Longhorn backup target"
+  description  = "S3-interop identity Longhorn uses to write off-site backups. roles/storage.objectAdmin bound at the longhorn-backups bucket only. HMAC pair in the longhorn-backup-credentials GSM container, operator-minted out of band."
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_storage_bucket" "longhorn_backups" {
+  project  = google_project.lab.project_id
+  name     = var.longhorn_backups_bucket
+  location = var.longhorn_backups_bucket_location
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  # force_destroy=false so an accidental `tofu destroy` doesn't take the
+  # bucket — and every backup in it — without first emptying through
+  # Longhorn's own delete path or `gcloud storage rm -r`. Same posture
+  # as the tfstate bucket above.
+  force_destroy = false
+
+  # No object versioning. Longhorn writes immutable backup blocks with
+  # content-addressed names and manages its own retention via RecurringJob
+  # CRDs in the cluster — keeping noncurrent GCS versions on top of
+  # Longhorn's history would double-store every backup for no gain.
+  #
+  # No lifecycle rule either. Longhorn owns retention semantics
+  # (RecurringJob `.spec.retain` per volume); a TTL here would silently
+  # delete blocks Longhorn still references, breaking restore. If a
+  # bucket-level floor is ever wanted as a backstop, it must be set
+  # *higher* than the longest Longhorn retain window — out of scope for
+  # this slice.
+
+  depends_on = [google_project_service.enabled]
+}
+
+# Bucket-scoped objectAdmin. roles/storage.objectAdmin covers
+# create/read/delete/list of objects, which is exactly what Longhorn needs
+# to write new backup blocks and prune old ones. Binding at the bucket
+# resource (not the project) is the blast-radius gate: a leaked HMAC pair
+# cannot touch the tfstate bucket, the AR push paths, or anything else
+# in the project.
+resource "google_storage_bucket_iam_member" "longhorn_backup_object_admin" {
+  bucket = google_storage_bucket.longhorn_backups.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.longhorn_backup.email}"
+}
+
+# GSM container for the HMAC `{access_id, secret}` JSON. Same shape as
+# talos-cluster-secrets / argocd-repo-ssh-key: container TF-managed (so
+# the addon's ExternalSecret can reference a stable name on a fresh
+# project), value uploaded out of band so a long-lived credential is
+# never round-tripped through TF state.
+#
+# Mint and upload (after `tofu apply` here):
+#
+#   gcloud storage hmac create \
+#     $(tofu output -raw longhorn_backup_service_account_email) \
+#     --project=$(tofu output -raw project_id) \
+#     --format='json(accessId,secret)' > /tmp/longhorn-hmac.json
+#   jq -c '{access_id: .accessId, secret: .secret}' /tmp/longhorn-hmac.json \
+#     | gcloud secrets versions add \
+#         $(tofu output -raw longhorn_backup_credentials_secret_id) \
+#         --project=$(tofu output -raw project_id) \
+#         --data-file=-
+#   shred -u /tmp/longhorn-hmac.json
+#
+# Rotation: `gcloud storage hmac update <access_id> --deactivate` the
+# current key, mint a new one with the same command above, upload as a
+# new GSM version, then `gcloud storage hmac delete <access_id>` once
+# Longhorn picks up the new version (ESO refresh + Longhorn's
+# backup-target reload — bounded by `refreshInterval: 1h` on the
+# ExternalSecret).
+resource "google_secret_manager_secret" "longhorn_backup_credentials" {
+  project   = google_project.lab.project_id
+  secret_id = "longhorn-backup-credentials"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "longhorn"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- Cloudflare Tunnel: public preview env path (ADR-0006) -----------------
 #
 # Two GSM containers back the `terraform/cloudflare/` root and the

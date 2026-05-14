@@ -180,6 +180,24 @@ variable "cluster_pull_k8s_sa" {
   default     = "ar-canary-puller"
 }
 
+variable "longhorn_backup_sa_id" {
+  description = "Service account ID (the part before @) for the Longhorn backup-target SA. roles/storage.objectAdmin scoped to the longhorn-backups bucket only — a leak cannot reach any other bucket or object in the project. The SA's HMAC key (minted out of band; see terraform/gcp/README.md) is what Longhorn uses to authenticate against the GCS S3 interoperability API."
+  type        = string
+  default     = "longhorn-backup"
+}
+
+variable "longhorn_backups_bucket" {
+  description = "Globally-unique name of the GCS bucket holding Longhorn off-site backups. Longhorn writes through the S3 interoperability API; the bucket's name is the `<bucket>` part of the `s3://<bucket>@<region>/` URL Longhorn's backupTarget setting consumes."
+  type        = string
+  default     = "rockingham-longhorn-backups"
+}
+
+variable "longhorn_backups_bucket_location" {
+  description = "Location for the longhorn-backups bucket. us-east4 (Ashburn, VA) mirrors the artifact-registry region choice — closest of the four US GCP regions to the Rockingham homelab, which is where the bytes travel from. Single region rather than multi-region: backups are recoverable, not transactional, so the multi-region durability premium isn't worth the cost. Must match the `<region>` in kubernetes/apps/longhorn/helm-values.yaml's `backupTarget` URL (lowercase form)."
+  type        = string
+  default     = "US-EAST4"
+}
+
 # Note: variables `projects_dns_name` and `projects_zone_nameservers` were
 # removed in #126's apex-on-CF refactor (#145). The projects.jackhall.dev
 # name space is no longer a separate Cloud DNS or Cloudflare subzone — its

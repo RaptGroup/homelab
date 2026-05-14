@@ -123,6 +123,26 @@ output "cluster_wif_provider" {
   value       = google_iam_workload_identity_pool_provider.cluster_talos.name
 }
 
+output "longhorn_backup_service_account_email" {
+  description = "Email of the Longhorn backup-target SA. Operator passes this to `gcloud storage hmac create` to mint the HMAC pair Longhorn authenticates with; see terraform/gcp/README.md."
+  value       = google_service_account.longhorn_backup.email
+}
+
+output "longhorn_backups_bucket" {
+  description = "Name of the GCS bucket that holds Longhorn off-site backups. Must match the `<bucket>` in kubernetes/apps/longhorn/helm-values.yaml's `backupTarget` URL."
+  value       = google_storage_bucket.longhorn_backups.name
+}
+
+output "longhorn_backups_bucket_location" {
+  description = "Location of the longhorn-backups bucket. Lowercased, this is the `<region>` segment of the `s3://<bucket>@<region>/` URL Longhorn's backupTarget consumes."
+  value       = google_storage_bucket.longhorn_backups.location
+}
+
+output "longhorn_backup_credentials_secret_id" {
+  description = "GSM secret ID holding the Longhorn HMAC `{access_id, secret}` JSON. Versions are uploaded out of band (see terraform/gcp/README.md). The cluster-side ExternalSecret in kubernetes/apps/longhorn/manifests/external-secret.yaml references this secret name verbatim."
+  value       = google_secret_manager_secret.longhorn_backup_credentials.secret_id
+}
+
 output "cloudflare_api_token_secret_id" {
   description = "GSM secret ID holding the operator-minted Cloudflare API token consumed by terraform/cloudflare/. Versions are uploaded out of band (see terraform/cloudflare/README.md)."
   value       = google_secret_manager_secret.cloudflare_api_token.secret_id

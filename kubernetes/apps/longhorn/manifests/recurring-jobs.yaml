@@ -1,0 +1,54 @@
+# Default RecurringJobs attached to every Longhorn-class volume via the
+# StorageClass-level `recurringJobSelector` in helm-values.yaml. The
+# selector names these jobs by name (not group), so they bind only to
+# Longhorn volumes — `local-path` PVCs are not affected.
+#
+# Cadence and retention:
+#   - `snapshot-daily`: in-cluster snapshot every day at 03:00 UTC,
+#     retain 7. Cheap (no egress, lives on the same XFS partition);
+#     covers the "I deleted the wrong row twenty minutes ago" case.
+#   - `backup-weekly`: off-site backup every Sunday at 04:00 UTC,
+#     retain 4. Writes to the GCS bucket via the S3-interop endpoint;
+#     covers the "the cluster is gone" case.
+#
+# Retention numbers are starting points; bump per volume by annotating
+# the PVC with a different `recurring-job.longhorn.io/source: enabled`
+# label set or by detaching from the default and attaching custom
+# RecurringJobs.
+#
+# Both jobs set `concurrency: 1` — only one volume's job runs at a
+# time, so a burst of backups (six worker-pinned volumes all firing at
+# 04:00 Sunday) doesn't saturate the bucket-side throughput or the
+# longhorn-manager's job pool. `task` field is the canonical job kind
+# (one of: snapshot, backup, snapshot-cleanup, snapshot-delete,
+# filesystem-trim).
+#
+# These are Longhorn CRDs; the chart's CRD bundle installs them as part
+# of the same Application. The Application's `selfHeal: true` covers
+# the first-install race where Argo applies these manifests before the
+# chart's CRD has registered — the next reconcile picks them up.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-daily
+  namespace: longhorn-system
+spec:
+  cron: "0 3 * * *"
+  task: snapshot
+  groups: []
+  retain: 7
+  concurrency: 1
+  labels: {}
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: backup-weekly
+  namespace: longhorn-system
+spec:
+  cron: "0 4 * * 0"
+  task: backup
+  groups: []
+  retain: 4
+  concurrency: 1
+  labels: {}

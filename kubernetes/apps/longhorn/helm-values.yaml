@@ -12,8 +12,6 @@
 #     patches carve out of `/dev/nvme0n1` free space (issue #121).
 #
 # What this install IS NOT (deferred — own slices):
-#   - A backup target. `backupTarget` and `backupTargetCredentialSecret`
-#     stay blank; issue #123 wires GCS via the S3 interop API.
 #   - The cluster default. Flipping the default to `longhorn` was
 #     explicitly rejected in ADR-0005 — distributed-DB StatefulSets
 #     want local-path with anti-affinity, not replicated-under-replicated.
@@ -55,6 +53,19 @@ persistence:
   # ADR-0005 "Decision".
   defaultClassReplicaCount: 2
   reclaimPolicy: Delete
+  # Bind the default RecurringJobs to every volume created with
+  # `storageClassName: longhorn`. The two jobs (`snapshot-daily`,
+  # `backup-weekly`) are defined as Longhorn CRDs in
+  # manifests/recurring-jobs.yaml. Selecting by name (not group) keeps
+  # the binding explicit — adding a new RecurringJob to the cluster
+  # doesn't auto-attach to longhorn volumes unless it's named here too.
+  recurringJobSelector:
+    enable: true
+    jobList:
+      - name: snapshot-daily
+        isGroup: false
+      - name: backup-weekly
+        isGroup: false
 
 defaultSettings:
   # XFS partition carved by talos/patches/nodes/worker-*.yaml's
@@ -70,13 +81,6 @@ defaultSettings:
   # below: nodeSelector picks workers in; taintToleration keeps CPs
   # out even if the label drifts.
   taintToleration: ""
-  # Backup target intentionally blank — wired by issue #123 (GCS via
-  # S3 interop, HMAC key from terraform/gcp/ → ESO → Secret). Leaving
-  # `backupTarget` empty here means the Longhorn UI shows backups as
-  # "not configured" rather than failing to reach an unreachable
-  # target.
-  backupTarget: ""
-  backupTargetCredentialSecret: ""
   # Apply the workers-only selector to the CSI sidecars and other
   # system-managed components the chart spawns indirectly. Format is
   # Longhorn-specific: `key1:value1;key2:value2`, NOT the standard
@@ -112,3 +116,30 @@ longhornUI:
 # rendered `longhorn-frontend` Service in this namespace.
 ingress:
   enabled: false
+
+# Off-site backups via GCS S3 interop. ADR-0005 ("Backup target") +
+# issue #123. The chart's top-level `defaultBackupStore` is the 1.10
+# location for these settings (the deprecated `defaultSettings.backupTarget`
+# keys are ignored on this chart version).
+#
+# `backupTarget` URL format: `s3://<bucket>@<region>/<optional-prefix>`.
+# The `<region>` segment must be the lowercase form of the bucket's
+# location (terraform/gcp/variables.tf → `longhorn_backups_bucket_location`).
+# A mismatch surfaces as a `BackupTarget Unhealthy` condition in the
+# Longhorn UI with the underlying SignatureDoesNotMatch error from GCS.
+#
+# `backupTargetCredentialSecret` references the K8s Secret materialized
+# by manifests/external-secret.yaml in this namespace — keys:
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINTS,
+# VIRTUAL_HOSTED_STYLE. The HMAC pair behind the first two is minted out
+# of band against the `longhorn-backup` GCP SA and lives in the
+# `longhorn-backup-credentials` GSM container; see terraform/gcp/README.md.
+#
+# `pollInterval`: 300s (default) is fine — backup-target health checks
+# are a no-op on a healthy bucket; the polling cadence only affects how
+# quickly a freshly-uploaded ESO credential rotation flips the UI from
+# Unhealthy back to Healthy.
+defaultBackupStore:
+  backupTarget: s3://rockingham-longhorn-backups@us-east4/
+  backupTargetCredentialSecret: longhorn-backup-credentials
+  pollInterval: 300

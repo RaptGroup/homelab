@@ -13,8 +13,10 @@ kubernetes/apps/longhorn/
 ├── application.yaml       # multi-source ArgoCD Application (sync-wave -10)
 ├── helm-values.yaml       # charts.longhorn.io / longhorn chart values
 └── manifests/
-    ├── namespace.yaml     # longhorn-system Namespace (pod-security: privileged)
-    └── httproute.yaml     # longhorn.lab.jackhall.dev → longhorn-frontend Service
+    ├── namespace.yaml         # longhorn-system Namespace (pod-security: privileged)
+    ├── httproute.yaml         # longhorn.lab.jackhall.dev → longhorn-frontend Service
+    ├── external-secret.yaml   # GSM → K8s Secret with HMAC pair + S3-interop env
+    └── recurring-jobs.yaml    # snapshot-daily + backup-weekly RecurringJob CRDs
 ```
 
 ## Which `StorageClass` for what
@@ -62,11 +64,87 @@ Longhorn will not start without:
 
 Both are owned by issue #121.
 
+## Off-site backups (GCS via S3 interop)
+
+`defaultBackupStore.backupTarget` points at the
+`rockingham-longhorn-backups` GCS bucket through the S3 interoperability
+endpoint. The credential is an HMAC pair on the `longhorn-backup` GCP
+SA (created in `terraform/gcp/`, repo-scoped `roles/storage.objectAdmin`
+on the bucket only). The flow:
+
+```
+GSM `longhorn-backup-credentials` (JSON {access_id, secret})
+   │
+   ▼   ExternalSecret in this namespace (manifests/external-secret.yaml)
+K8s Secret `longhorn-backup-credentials`
+   keys: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+         AWS_ENDPOINTS=https://storage.googleapis.com,
+         VIRTUAL_HOSTED_STYLE=true
+   │
+   ▼   defaultBackupStore.backupTargetCredentialSecret
+Longhorn → s3://rockingham-longhorn-backups@us-east4/
+```
+
+The HMAC pair is minted out of band by the operator
+(`gcloud storage hmac create`) and uploaded as a GSM version — same
+pattern as `talos-cluster-secrets` and `argocd-repo-ssh-key`, so a
+long-lived plaintext credential never enters Terraform state. See
+[`terraform/gcp/README.md`](../../../terraform/gcp/README.md#longhorn-off-site-backups-gcs-via-s3-interop)
+for the mint + upload + rotation commands.
+
+`VIRTUAL_HOSTED_STYLE=true` is GCS-specific. The S3-interop endpoint
+only accepts virtual-hosted-style URLs (`<bucket>.storage.googleapis.com/<key>`);
+path-style requests return 400. Longhorn defaults to path style for
+generic S3, so the env var has to be set explicitly here even though
+it has no equivalent on AWS S3 itself.
+
+### Default RecurringJobs
+
+Two RecurringJobs ship by default and bind to every volume created
+with `storageClassName: longhorn` via `persistence.recurringJobSelector`
+in `helm-values.yaml`:
+
+| Job              | Cadence               | Task     | Retain | Destination                 |
+|------------------|-----------------------|----------|--------|-----------------------------|
+| `snapshot-daily` | `0 3 * * *` (03:00)   | snapshot | 7      | local replicas (XFS)        |
+| `backup-weekly`  | `0 4 * * 0` (Sun 04)  | backup   | 4      | GCS via the backup target   |
+
+Snapshots are cheap (no egress, lives on `/var/mnt/longhorn`) and
+cover the "I deleted the wrong row twenty minutes ago" case; backups
+write off-cluster and cover the "the cluster is gone" case.
+
+Per-volume override path: detach the volume from these jobs and
+attach custom RecurringJobs in the Longhorn UI / via CRDs. The
+StorageClass-level binding is the *default* for opt-in convenience,
+not a mandate.
+
+GCS lifecycle rules on the bucket are deliberately not set. Longhorn
+owns retention semantics (each RecurringJob's `.spec.retain`); a TTL
+on the bucket itself would silently delete blocks Longhorn still
+references, breaking restore.
+
+### Restore drill
+
+The acceptance criterion for backups isn't "objects appear in the
+bucket" — it's "data restored from those objects matches the
+original". The smoke procedure:
+
+1. Create a Longhorn PVC, mount it in a pod, write a known marker
+   file.
+2. From the Longhorn UI, trigger a backup of the volume (or wait
+   for `backup-weekly`).
+3. Delete the pod and PVC.
+4. From the Longhorn UI's Backups list, restore the backup into a
+   new PVC.
+5. Mount the new PVC and verify the marker file is present and
+   byte-identical.
+
+Step 5 is the only one that actually closes the loop. Step 4
+succeeding without step 5 doesn't prove backups work; it proves
+the metadata write-back loop works.
+
 ## What's NOT here
 
-- **Backup target.** `defaultSettings.backupTarget` and
-  `backupTargetCredentialSecret` are blank; backup wiring (GCS via the
-  S3 interop API, HMAC key from `terraform/gcp/`) is issue #123.
 - **Existing-PVC migration.** Phase 1 PVCs (AdGuard, ArgoCD, Homepage)
   stay on `local-path` — no migration is performed by this slice.
 - **Cluster default flip.** Explicitly rejected in ADR-0005;
