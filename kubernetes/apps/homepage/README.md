@@ -37,12 +37,22 @@ Homepage's K8s status lookup defaults to a pod with
 `app.kubernetes.io/name=<HTTPRoute name>` in the HTTPRoute's namespace.
 When the default doesn't match a real pod the card renders **NOT
 FOUND** *and* the Homepage Deployment logs `<kubernetesStatusService>
-no pods found …` on every dashboard load. Two escape hatches:
+no pods found …` on every dashboard load. Three escape hatches:
 
-| Annotation                  | Effect                                                      |
-|-----------------------------|-------------------------------------------------------------|
-| `gethomepage.dev/app`       | Overrides the `app.kubernetes.io/name` label selector       |
-| `gethomepage.dev/external`  | `"true"` skips the K8s status lookup entirely (plain link)  |
+| Annotation                          | Effect                                                                |
+|-------------------------------------|-----------------------------------------------------------------------|
+| `gethomepage.dev/app`               | Overrides the *value* matched against `app.kubernetes.io/name=`       |
+| `gethomepage.dev/pod-selector`      | Replaces the selector entirely — any K8s label selector expression    |
+| `gethomepage.dev/external`          | `"true"` skips the K8s status lookup entirely (plain link)            |
+
+The widget side has its own pair: `gethomepage.dev/widget.app` swaps
+the value for the kubernetes widget's lookup,
+`gethomepage.dev/widget.podSelector` (note the camelCase — Homepage
+maps `widget.*` annotations directly onto the widget config object)
+replaces it with a full selector expression. Pick `pod-selector` /
+`widget.podSelector` when the *label key itself* is wrong, e.g. when
+a chart names every workload `app.kubernetes.io/name=<chart>` and
+puts per-component identity on the bare `app=` label.
 
 Cross-namespace lookups are not expressible on HTTPRoutes. Homepage
 v1.2.0 honors `gethomepage.dev/namespace` on `Ingress` objects only;
@@ -66,12 +76,25 @@ Live examples in this repo:
   HTTPRoute, the route sets `gethomepage.dev/external: "true"`; the
   Hubble card renders as a plain link with no status pill and the
   Homepage Deployment stops emitting pod-lookup errors for it.
+- `kubernetes/apps/longhorn/manifests/httproute.yaml` — the upstream
+  Longhorn chart sets `app.kubernetes.io/name=longhorn` uniformly on
+  every workload (`longhorn-ui`, `longhorn-manager`, the `csi-*`
+  components), with per-component identity on the bare `app=` label.
+  `gethomepage.dev/app` couldn't reach a per-component pod, so the
+  route sets `gethomepage.dev/pod-selector: app=longhorn-ui` for the
+  status pill and `gethomepage.dev/widget.podSelector:
+  app=longhorn-manager` for the kubernetes widget's DaemonSet
+  lookup.
 
 When adding a new addon: if the HTTPRoute's `metadata.name` matches the
 backing Deployment's `app.kubernetes.io/name` *and* both live in the
 same namespace, no override is needed. If the names differ but the
-namespace matches, set `gethomepage.dev/app`. If the Deployment lives
-in a different namespace from the HTTPRoute, set
+namespace matches, set `gethomepage.dev/app`. If the chart uses the
+same `app.kubernetes.io/name` value across multiple workloads (so
+swapping the value can't disambiguate), set
+`gethomepage.dev/pod-selector` to a selector expression that targets
+the specific workload's labels. If the Deployment lives in a
+different namespace from the HTTPRoute, set
 `gethomepage.dev/external: "true"` rather than restructuring the repo
 to satisfy Homepage's HTTPRoute discovery limitations. Reference:
 [Homepage K8s status discovery docs](https://gethomepage.dev/configs/kubernetes/#using-the-deployments-status).
