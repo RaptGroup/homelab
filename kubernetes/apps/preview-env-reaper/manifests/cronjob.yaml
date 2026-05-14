@@ -29,7 +29,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: reaper
-              image: docker.io/bitnami/kubectl:1.31.0
+              image: docker.io/bitnamilegacy/kubectl:1.33.4
               imagePullPolicy: IfNotPresent
               command: ["/bin/sh", "/scripts/reap.sh"]
               securityContext:
