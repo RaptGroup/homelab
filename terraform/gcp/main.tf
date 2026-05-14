@@ -530,6 +530,25 @@ resource "google_project_iam_member" "tf_ci_viewer" {
   member  = "serviceAccount:${google_service_account.tf_ci.email}"
 }
 
+# roles/viewer covers every `*.get` and `*.list` the plan SA needs to
+# refresh resources during `tofu plan`, with one well-known exception:
+# `storage.buckets.getIamPolicy`. GCS's IAM permission model split bucket
+# policy reads out of the basic viewer role (the legacy ACL world made
+# IAM-policy access more privileged than other read paths), so refreshing
+# `google_storage_bucket_iam_member` against any bucket in this project
+# 403s on plan. roles/iam.securityReviewer is the predefined role for
+# "read every IAM policy in the project, change none of them" — exactly
+# the shape plan refresh needs. Bound project-wide rather than
+# bucket-scoped because the gap recurs the moment a second bucket-IAM
+# binding (or any other resource backed by an API that withholds
+# getIamPolicy from roles/viewer) gets added; one binding here covers
+# them all.
+resource "google_project_iam_member" "tf_ci_security_reviewer" {
+  project = google_project.lab.project_id
+  role    = "roles/iam.securityReviewer"
+  member  = "serviceAccount:${google_service_account.tf_ci.email}"
+}
+
 resource "google_service_account_iam_member" "tf_ci_wif_user" {
   service_account_id = google_service_account.tf_ci.name
   role               = "roles/iam.workloadIdentityUser"
