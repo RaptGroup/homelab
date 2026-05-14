@@ -3,7 +3,7 @@
 # terminated TLS at Cloudflare's edge. The hop from cloudflared to this
 # Gateway never crosses the LAN.
 #
-# Two structural properties are load-bearing:
+# Three structural properties are load-bearing:
 #
 # 1. `allowedRoutes.namespaces.from: Selector` with a namespaceSelector
 #    requiring `projects.jackhall.dev/enabled=true`. Only namespaces the
@@ -12,18 +12,28 @@
 #    is refused by the API itself. The gate is structural — it doesn't
 #    rely on convention or out-of-band review.
 #
-# 2. No `lbipam.cilium.io/ips` annotation. The Gateway intentionally
-#    does not pin an LB-pool IP; cloudflared targets it via the
-#    Cilium-generated Service name (cilium-gateway-projects in
-#    gateway-system), routed inside the cluster via ClusterIP. See
-#    README "LAN reachability and the Cilium 1.16 constraint" for the
-#    real-world caveat — Cilium 1.16's Gateway controller currently
-#    forces type: LoadBalancer on the generated Service, so the
-#    Gateway will still receive an LB-pool IP from `lab-pool`.
-#    Realizing ADR-0006's "structurally LAN-impossible" property
-#    requires either a Cilium 1.18+ upgrade (CiliumGatewayClassConfig
-#    can scope the generated Service) or an L2-announcement-policy
-#    refinement; tracked as follow-up to this issue.
+# 2. No `lbipam.cilium.io/ips` annotation. Cilium 1.16's Gateway
+#    controller still generates `type: LoadBalancer` for any Gateway
+#    resource (and Cilium 1.18+'s `CiliumGatewayClassConfig` only
+#    supports LoadBalancer / NodePort — not ClusterIP — so an upgrade
+#    would not by itself change that). Cilium's lbipam therefore
+#    allocates the first free address from `lab-pool` for the
+#    auto-generated `cilium-gateway-projects` Service; cloudflared
+#    targets it via the in-cluster Service name (cilium-gateway-projects
+#    in gateway-system) and the traffic flows over ClusterIP routing
+#    inside the cluster, not via that LB IP.
+#
+# 3. `spec.infrastructure.labels.homelab.jackhall.dev/l2-announce: "false"`.
+#    Gateway API v1 propagates these labels onto the auto-generated
+#    Service. `terraform/bootstrap/cilium.tf`'s
+#    `lab-l2-workers` CiliumL2AnnouncementPolicy carries a
+#    `serviceSelector` excluding services with that label, so no
+#    worker ARP-announces this Gateway's LB IP on the LAN. The IP
+#    exists in Cilium's bookkeeping but is unreachable from the LAN
+#    by construction — no ARP frames advertise it, so no LAN device
+#    can resolve it to a MAC address. Realises ADR-0006's
+#    "LAN-unreachable by construction" property without a Cilium
+#    upgrade. See #142.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -31,6 +41,11 @@ metadata:
   namespace: gateway-system
 spec:
   gatewayClassName: cilium
+  infrastructure:
+    labels:
+      # Read by the lab-l2-workers CiliumL2AnnouncementPolicy's
+      # serviceSelector to skip this Gateway's auto-generated Service.
+      homelab.jackhall.dev/l2-announce: "false"
   listeners:
     - name: http
       hostname: "*.projects.jackhall.dev"

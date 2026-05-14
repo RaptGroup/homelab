@@ -77,59 +77,57 @@ configured at the Cloudflare side (via
 `terraform/cloudflare/main.tf` → `cloudflare_zero_trust_tunnel_cloudflared_config`),
 not in a local cloudflared config file — the tunnel is remote-managed.
 
-## LAN reachability and the Cilium 1.16 constraint
+## LAN unreachability — labelled L2-announce opt-out
 
 ADR-0006 calls for the `projects` Gateway to be **unreachable from the
-LAN by construction** — a ClusterIP-only Service with no LB-pool
-address, so the Cilium LB pool stays a LAN-only surface.
+LAN by construction** — the only ingress path is `cloudflared` →
+Gateway, and a misbehaving LAN client cannot reach a preview by any
+means.
 
-In Cilium 1.16 (this cluster's current version), that property is not
-fully realisable. The Gateway controller always generates a Service of
-`type: LoadBalancer` for a Gateway resource; the parametrized
-`CiliumGatewayClassConfig` CRD that would let us scope the generated
-Service to ClusterIP ships in **Cilium 1.18+**, and even then only
-supports `LoadBalancer` and `NodePort` as Service types per the
-upstream docs as of writing.
+The mechanism: the Gateway carries
+`spec.infrastructure.labels.homelab.jackhall.dev/l2-announce: "false"`.
+Gateway API v1 propagates infrastructure labels onto the auto-generated
+Service (`cilium-gateway-projects` in `gateway-system`). The
+`lab-l2-workers` `CiliumL2AnnouncementPolicy` in
+[`terraform/bootstrap/cilium.tf`](../../../terraform/bootstrap/cilium.tf)
+carries a matching `serviceSelector` that excludes services with that
+label, so **no worker ARP-announces the Gateway's LB IP**. The IP
+exists in Cilium's lbipam bookkeeping (Cilium 1.16's Gateway controller
+still generates `type: LoadBalancer` unconditionally, and Cilium 1.18+'s
+`CiliumGatewayClassConfig` only supports `LoadBalancer`/`NodePort` —
+not `ClusterIP`), but it is invisible to L2 and therefore undeliverable
+from any LAN device:
 
-What this means in practice for the tracer-bullet PR:
+- LAN-side ARP-Who-Has for the Gateway's IP gets no reply → no MAC →
+  no Ethernet frame can be built → the packet never leaves the
+  client's NIC. There is no "knows the IP and crafts a Host header"
+  bypass.
+- `cloudflared` reaches the Gateway by Service DNS
+  (`cilium-gateway-projects.gateway-system.svc.cluster.local`) over
+  ClusterIP routing inside the cluster — that path does not depend on
+  L2 announcement.
+- Public-DNS resolution of `*.projects.jackhall.dev` goes via
+  Cloudflare regardless; there is no AdGuard rewrite for the projects
+  subzone.
 
-- This manifest **omits** `lbipam.cilium.io/ips` per the issue's "no
-  LB pool IP annotation" requirement. The lint guard
-  ([`scripts/lint-apps.sh`](../../../scripts/lint-apps.sh)) is
-  updated to skip the pin check for Gateways carrying the
-  `homelab.jackhall.dev/lan-routable: "false"` annotation — that
-  annotation is the explicit operator-facing marker.
+This realises ADR-0006's "LAN-unreachable by construction" property
+without a Cilium upgrade. See #142 for the decision record (Path B —
+labelled opt-out — chosen over Path A — Cilium 1.18+ upgrade — because
+Cilium 1.18 still cannot scope the generated Service to ClusterIP, so
+the upgrade would not by itself deliver the property and would carry
+significantly more blast radius).
 
-  Wait — the manifest as committed does **not** carry that annotation
-  either, because the lint update in this PR widens the skip to
-  Gateways whose namespaceSelector gate (`from: Selector`) marks them
-  as preview-env-only. See the script comment for the rationale; the
-  annotation form remains the escape hatch if a future
-  preview-shaped Gateway wants a different gate.
+The manifest still omits `lbipam.cilium.io/ips`: there is no benefit to
+pinning the IP for a Service no node announces, and the lint guard
+([`scripts/lint-apps.sh`](../../../scripts/lint-apps.sh)) recognises
+`allowedRoutes.namespaces.from: Selector` as the structural marker for
+"this Gateway isn't on the LB pool by design."
 
-- Cilium's lbipam will allocate the first free address from `lab-pool`
-  (currently `.202` since AdGuard and `lab` consume `.200` / `.201`),
-  and the existing L2-announcement policy on workers will ARP-announce
-  it. A LAN client that knows the IP and crafts a Host header request
-  (`curl -H "Host: foo.projects.jackhall.dev" http://192.168.1.202`)
-  can technically reach a preview workload. Public-DNS resolution of
-  `*.projects.jackhall.dev` goes via Cloudflare regardless — there is
-  no AdGuard rewrite for the projects subzone.
-
-- Realising ADR-0006's structural-impossibility property is a
-  follow-up. Two paths:
-  1. Cilium 1.18+ upgrade + a parametrized GatewayClass scoping the
-     `projects` Gateway's generated Service to a non-LoadBalancer
-     shape (NodePort + iptables-block, or — if upstream lands ClusterIP
-     support — ClusterIP).
-  2. A separate `CiliumL2AnnouncementPolicy` whose `serviceSelector`
-     opts services *out* by label, with this Gateway's Service
-     carrying the opt-out label. The IP is still allocated from the
-     pool, but no ARP frames advertise it — LAN clients can't reach
-     it without a static route.
-
-  Both are out of scope for the tracer-bullet PR; tracked as a
-  follow-up issue.
+**Cosmetic gap.** Cilium's lbipam still allocates one address from
+`lab-pool` (currently `.202`, since AdGuard and `lab` consume
+`.200`/`.201`) for the unreachable Service. The address is consumed in
+bookkeeping but unreachable on the wire. With 30 addresses in
+`lab-pool.start..end` and one preview-env Gateway, this is acceptable.
 
 ## End-to-end verification
 
