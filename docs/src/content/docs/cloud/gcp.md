@@ -8,8 +8,9 @@ Everything the lab needs from a cloud provider lives in one GCP project,
 [`terraform/gcp/`](https://github.com/RaptGroup/homelab/tree/main/terraform/gcp)
 and holds, in a single bounded blast radius:
 
-- Two Cloud DNS managed zones (`jackhall.dev` apex + `lab.jackhall.dev`
-  subzone).
+- One Cloud DNS managed zone (`lab.jackhall.dev`). The apex
+  `jackhall.dev` lives in Cloudflare (managed by `terraform/cloudflare/`)
+  — see ADR-0003's 2026-05-12 amendment for why.
 - The Secret Manager (GSM) containers that External Secrets Operator
   reads from.
 - Two IAM service accounts (`cert-manager-dns01`, `external-secrets`) the
@@ -39,25 +40,20 @@ as the `rockingham-homelab` entry.
 
 ## DNS
 
-Both zones live in Cloud DNS. The shape exists for one structural reason:
-the registrar (Squarespace) was pointed at Cloud DNS nameservers at the
-apex level when the `lab` subzone was first delegated. Without an apex
-zone in Cloud DNS, queries for `jackhall.dev` return `REFUSED` and Let's
-Encrypt's CAA walk SERVFAILs while trying to issue `*.lab.jackhall.dev` —
-the walk traverses `*.lab.jackhall.dev → lab.jackhall.dev →
-jackhall.dev → dev` and stops at the first level that doesn't resolve.
+Only the `lab.jackhall.dev` subzone lives in Cloud DNS. The apex
+`jackhall.dev` is on Cloudflare (managed by `terraform/cloudflare/`); the
+NS records that delegate `lab.jackhall.dev` to Cloud DNS live inside the
+CF apex zone, not here. See [ADR-0003's 2026-05-12 amendment](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0003-dns-strategy.md)
+for why the apex moved.
 
 | Zone | Holds | Why it's in Cloud DNS |
 |---|---|---|
-| `jackhall.dev` (apex) | SOA/NS (auto), the CAA record, the `lab` NS delegation. Nothing else. | Squarespace's nameserver field points here, so the apex *must* resolve from Cloud DNS or every walk above the lab subzone fails. |
-| `lab.jackhall.dev` | ACME DNS-01 TXT records, written by cert-manager. No A/AAAA — internal hostnames are served by AdGuard Home in-cluster. | NS-delegated from the apex above. cert-manager needs write access via a service account; that's only possible against a zone in a provider Terraform owns. |
+| `lab.jackhall.dev` | ACME DNS-01 TXT records, written by cert-manager. No A/AAAA — internal hostnames are served by AdGuard Home in-cluster. | cert-manager needs write access via a service account; that's only possible against a zone in a provider Terraform owns. NS-delegated from the CF apex via a `cloudflare_dns_record.lab_delegation` set in `terraform/cloudflare/`. |
 
-The CAA record at the apex permits Let's Encrypt and only Let's Encrypt
-to issue for `jackhall.dev` and below. Without an explicit CAA, the CAA
-walk hits the default-allow at the `dev` TLD and the cluster still gets
-its cert; the explicit record is defense in depth, blocking any other
-CA from accidentally issuing for this domain if the apex ever stops
-returning `REFUSED`.
+The CAA record permitting Let's Encrypt to issue for `jackhall.dev` and
+below lives at the apex too — see `terraform/cloudflare/` and the
+`jackhall.dev (apex)` entry in
+[CONTEXT.md](https://github.com/RaptGroup/homelab/blob/main/CONTEXT.md).
 
 The `lab.jackhall.dev` zone is the *public* half of the lab's
 [split-horizon DNS](/homelab/networking/split-horizon-dns/) setup — it
@@ -68,10 +64,11 @@ Outputs to consume:
 
 - `lab_zone_name` → `terraform/bootstrap/` passes it to cert-manager's
   `ClusterIssuer` so the DNS-01 solver targets exactly this zone.
-- `lab_zone_name_servers` → operator pastes into the registrar after the
-  first apply, completing the NS delegation.
-- `apex_zone_name_servers` → operator compares against Squarespace's
-  current nameserver field; mismatch is the signal to update Squarespace.
+- `lab_zone_name_servers` → consumed by `terraform/cloudflare/` via
+  `terraform_remote_state` to populate the `lab.jackhall.dev` NS records
+  inside the CF apex zone.
+- `apex_dns_name` → consumed by `terraform/cloudflare/` via
+  `terraform_remote_state` to locate the CF apex zone.
 
 ## Secret Manager
 

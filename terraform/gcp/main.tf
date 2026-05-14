@@ -44,82 +44,11 @@ resource "google_project_service" "enabled" {
   disable_on_destroy = false
 }
 
-# --- VESTIGIAL: Cloud DNS apex zone ----------------------------------------
-#
-# As of 2026-05-12 (#145, ADR-0003 amendment) the apex `jackhall.dev` has
-# moved to Cloudflare. Squarespace's registrar nameservers no longer point
-# at Cloud DNS once that flip is complete; this zone and its records become
-# unreachable.
-#
-# The resources below stay in place as a **dormant fallback during
-# Squarespace propagation**. Both Cloud DNS and CF publish the same apex
-# CAA (`letsencrypt.org`) and the same lab NS delegation
-# (`ns-cloud-d{1,2,3,4}.googledomains.com.`), so any resolver hitting
-# either side mid-flip gets a consistent answer and cert-manager keeps
-# working. Issue #146 destroys this block once the migration is verified
-# stable (cert-manager has renewed at least once through the CF-apex CAA
-# walk, all public resolvers return CF NS for the apex).
-#
-# Until then, `tofu plan` should show **no diff** between TF and the live
-# Cloud DNS state — these resources are static historical artifacts, not
-# active configuration. If you find yourself wanting to edit them, you
-# probably want terraform/cloudflare/ instead.
-resource "google_dns_managed_zone" "apex" {
-  project     = google_project.lab.project_id
-  name        = var.apex_zone_name
-  dns_name    = "${var.apex_dns_name}."
-  description = "Rockingham Homelab — apex jackhall.dev. Holds the CAA record for Let's Encrypt and the NS delegation for lab.jackhall.dev. Squarespace must point the registrar nameserver field at this zone's name_servers."
-  visibility  = "public"
-
-  depends_on = [google_project_service.enabled]
-}
-
-# CAA at the apex. Without this, LE's CAA lookup at every level above
-# `*.lab.jackhall.dev` (`lab.jackhall.dev`, `jackhall.dev`, `dev`) finds
-# nothing and falls through to the default-allow — that already works
-# once the apex resolves at all. The explicit record is defense in depth:
-# any future certificate issued for jackhall.dev or below has to go
-# through Let's Encrypt.
-resource "google_dns_record_set" "apex_caa" {
-  project      = google_project.lab.project_id
-  managed_zone = google_dns_managed_zone.apex.name
-  name         = google_dns_managed_zone.apex.dns_name
-  type         = "CAA"
-  ttl          = 300
-
-  rrdatas = concat(
-    [for issuer in var.apex_caa_issuers : "0 issue \"${issuer}\""],
-    [for issuer in var.apex_caa_issuers : "0 issuewild \"${issuer}\""],
-  )
-}
-
-# Delegation NS for the lab subzone. With both apex and lab in Cloud DNS
-# this is technically redundant for resolution (whichever ns-cloud-* the
-# resolver hits already serves both zones), but standard practice — and
-# it's what makes the lab subzone delegation visible in `dig +trace`.
-resource "google_dns_record_set" "apex_lab_delegation" {
-  project      = google_project.lab.project_id
-  managed_zone = google_dns_managed_zone.apex.name
-  name         = google_dns_managed_zone.lab.dns_name
-  type         = "NS"
-  ttl          = 21600
-
-  rrdatas = google_dns_managed_zone.lab.name_servers
-}
-
-# NS delegation for the projects.jackhall.dev subzone deliberately does NOT
-# exist here. ADR-0006's original framing put `projects.*` in a separate
-# Cloudflare-managed subdomain zone NS-delegated from this apex; the
-# 2026-05-12 amendment (#145) puts those records as records inside the CF
-# apex zone instead — no separate subzone, no NS delegation needed at this
-# layer. terraform/cloudflare/ owns the projects.* records directly.
-#
-# This block is retained as a structural comment so a future reader who
-# expects the original ADR-0006 shape doesn't go looking for a missing
-# resource — the absence is intentional, not an oversight.
-
-# Public managed zone delegated from the apex via the NS record above.
-# cert-manager creates ACME TXT records here.
+# Public managed zone for the lab subzone. The NS delegation that points
+# `lab.jackhall.dev` at the four `ns-cloud-d*.googledomains.com.` records
+# lives inside the CF apex zone (terraform/cloudflare/main.tf →
+# `cloudflare_dns_record.lab_delegation`); this root just owns the
+# subzone itself. cert-manager creates ACME TXT records here.
 resource "google_dns_managed_zone" "lab" {
   project     = google_project.lab.project_id
   name        = var.lab_zone_name

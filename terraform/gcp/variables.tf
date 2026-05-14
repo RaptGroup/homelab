@@ -46,21 +46,9 @@ variable "lab_zone_name" {
 }
 
 variable "apex_dns_name" {
-  description = "FQDN of the apex domain. Squarespace already delegates this to Cloud DNS at the registrar (the lab subzone NS were applied at the apex level), so the apex zone has to live here too — without it, queries return REFUSED and Let's Encrypt's CAA walk fails."
+  description = "FQDN of the apex domain. Authoritative DNS for the apex lives in Cloudflare (terraform/cloudflare/), not in this root — this value is exported so terraform/cloudflare/ can read it via terraform_remote_state and locate the CF apex zone."
   type        = string
   default     = "jackhall.dev"
-}
-
-variable "apex_zone_name" {
-  description = "Name of the Cloud DNS managed zone resource for the apex. RFC1035."
-  type        = string
-  default     = "jackhall-dev"
-}
-
-variable "apex_caa_issuers" {
-  description = "ACME CA hostnames allowed to issue certificates for jackhall.dev and below. Empty list means no CAA record is published and Let's Encrypt falls through to the default-allow. Listing letsencrypt.org makes the cluster's wildcard issuer explicit and blocks any other CA from accidentally issuing for this domain."
-  type        = list(string)
-  default     = ["letsencrypt.org"]
 }
 
 variable "cert_manager_sa_id" {

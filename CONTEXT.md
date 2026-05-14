@@ -54,11 +54,7 @@ The apex zone moved from Cloud DNS to CF in
 [#145](https://github.com/RaptGroup/homelab/issues/145) — ADR-0003
 amendment 2026-05-12 — because adding `projects.jackhall.dev` as a
 CF-managed subdomain zone required the parent zone to also be on CF
-authoritative DNS (every plan, every flow). The Cloud DNS apex zone
-remains in `terraform/gcp/` as a dormant fallback during Squarespace
-propagation; destroyed in
-[#146](https://github.com/RaptGroup/homelab/issues/146) once the
-migration is verified stable.
+authoritative DNS (every plan, every flow).
 
 ### Split-horizon DNS
 

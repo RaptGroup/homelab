@@ -23,11 +23,6 @@ output "lab_zone_name_servers" {
   value       = google_dns_managed_zone.lab.name_servers
 }
 
-output "apex_zone_name_servers" {
-  description = "The four ns-cloud-*.googledomains.com nameservers that authoritatively serve the apex jackhall.dev zone. Compare against Squarespace's current nameserver field for the domain — if they differ, update Squarespace's nameservers to match."
-  value       = google_dns_managed_zone.apex.name_servers
-}
-
 output "cert_manager_sa_email" {
   description = "Service account email consumed by cert-manager's DNS-01 solver."
   value       = google_service_account.cert_manager.email
