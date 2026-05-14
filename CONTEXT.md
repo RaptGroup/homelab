@@ -175,21 +175,23 @@ the `cloudflared` tunnel). Lives in
 `cloudflared` reaches it via the auto-generated Service
 `cilium-gateway-projects` in `gateway-system`.
 
-ADR-0006 calls for a ClusterIP-only Service so the Gateway never
-appears on the LB pool. **Cilium 1.16 (the cluster's current version)
-cannot deliver that property** — its Gateway controller always
-generates `type: LoadBalancer` for a Gateway resource, and
-`CiliumGatewayClassConfig` (parametrized GatewayClass, 1.18+) only
-supports `LoadBalancer` / `NodePort` for the generated Service. The
-manifest therefore omits `lbipam.cilium.io/ips` per the issue's "no
-LB pool IP annotation" instruction; Cilium assigns whatever's free
-from `lab-pool` and the existing `lab-l2-workers` policy ARP-announces
-it on workers. A LAN client that knows the IP and crafts a `Host:`
-header can technically reach a preview workload — the public-DNS
-path via Cloudflare is the intended route, and there's no AdGuard
-rewrite for `*.projects.jackhall.dev`. Restoring the structural-
-impossibility property is a follow-up (Cilium 1.18+ upgrade, or a
-labelled L2-announcement opt-out).
+ADR-0006 calls for the Gateway to be unreachable from the LAN by
+construction. Cilium's Gateway controller still generates `type:
+LoadBalancer` for any Gateway resource (1.16's behaviour today; 1.18+'s
+`CiliumGatewayClassConfig` only adds `NodePort` to the menu — not
+`ClusterIP`), so the auto-generated `cilium-gateway-projects` Service
+consumes an LB-pool address. The Gateway carries
+`spec.infrastructure.labels.homelab.jackhall.dev/l2-announce: "false"`,
+propagated by Gateway API v1 onto that Service; the `lab-l2-workers`
+`CiliumL2AnnouncementPolicy` in
+[`terraform/bootstrap/cilium.tf`](./terraform/bootstrap/cilium.tf)
+carries a matching `serviceSelector` that excludes labelled services,
+so **no worker ARP-announces the IP**. A LAN ARP-Who-Has goes
+unanswered → no MAC → no Ethernet frame can be delivered. The IP
+exists in lbipam bookkeeping but is undeliverable from the LAN. The
+public-DNS path via Cloudflare is the intended route; there is no
+AdGuard rewrite for `*.projects.jackhall.dev`. See #142 for the Path-B
+implementation choice (labelled opt-out, not Cilium upgrade).
 
 `allowedRoutes.namespaces.from: Selector` with a namespaceSelector
 requiring the label `projects.jackhall.dev/enabled=true`. Only

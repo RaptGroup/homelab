@@ -1,6 +1,6 @@
 # ADR-0006: Public preview environments via Cloudflare Tunnel
 
-- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone)) and 2026-05-13 (see [Amendment](#amendment-2026-05-13-cost-10mo-for-wildcard-cert))
+- **Status:** Accepted; amended 2026-05-12 (see [Amendment](#amendment-2026-05-12-records-in-apex-zone-not-a-delegated-subzone)), 2026-05-13 (see [Amendment](#amendment-2026-05-13-cost-10mo-for-wildcard-cert)), and 2026-05-13 (see [Amendment](#amendment-2026-05-13-lan-unreachability-via-l2-announce-opt-out-not-cilium-upgrade))
 - **Date:** 2026-05-11
 
 ## Context
@@ -524,3 +524,65 @@ central `projects` Gateway with namespaceSelector gating, the
 in-cluster `cloudflared` Deployment, the per-namespace hardening
 bundle, the two-wrapper model, deferred CF Access. Only the
 edge-cert provenance changes: Universal SSL → ACM-issued wildcard.
+
+## Amendment 2026-05-13 (LAN unreachability via L2-announce opt-out, not Cilium upgrade)
+
+The original Decision point 3 specified that the `projects` Gateway is
+exposed "only via a ClusterIP `Service`" — no LB-pool IP, no LAN
+surface. #126's tracer-bullet implementation could not deliver that
+property: **Cilium 1.16's Gateway controller hardcodes
+`type: LoadBalancer`** on the auto-generated `cilium-gateway-<name>`
+Service, with no annotation or per-Gateway knob. The follow-up issue
+#142 enumerated two paths.
+
+Verifying both paths against upstream:
+
+- **Path A (Cilium 1.18+ upgrade + `CiliumGatewayClassConfig`).** Read
+  of the type definitions at `v1.18.2` confirms `spec.service.type` is
+  `+kubebuilder:validation:Enum=LoadBalancer;NodePort` —
+  [`pkg/k8s/apis/cilium.io/v2alpha1/gatewayclassconfig_types.go`](https://github.com/cilium/cilium/blob/v1.18.2/pkg/k8s/apis/cilium.io/v2alpha1/gatewayclassconfig_types.go).
+  ClusterIP is **not a supported value upstream**. The 1.18 upgrade
+  would trade an LB-pool IP for a NodePort exposed on every worker —
+  arguably worse for LAN reachability, not better, and requiring
+  supplementary host-firewall rules on each node to actually isolate.
+  Plus the full Cilium upgrade blast radius (CNI + kube-proxy
+  replacement + LB IPAM + L2 announcements + Gateway API all at once).
+- **Path B (labelled L2-announce opt-out).** Cilium 1.16's
+  Gateway-API translator already ingests `Gateway.Spec.Infrastructure`
+  ([`operator/pkg/model/ingestion/gateway.go`](https://github.com/cilium/cilium/blob/v1.16.5/operator/pkg/model/ingestion/gateway.go)
+  L44–46) and merges those labels onto the generated Service
+  ([`operator/pkg/model/translation/gateway-api/translator.go`](https://github.com/cilium/cilium/blob/v1.16.5/operator/pkg/model/translation/gateway-api/translator.go)
+  L130–134). The `lab-l2-workers` `CiliumL2AnnouncementPolicy` gains
+  a `serviceSelector` excluding services with
+  `homelab.jackhall.dev/l2-announce: "false"`; the Gateway carries
+  that label via `spec.infrastructure.labels`. Result: Cilium still
+  allocates an LB-pool IP for bookkeeping, but **no worker
+  ARP-answers for it**. A LAN device's ARP-Who-Has goes unanswered →
+  no MAC → no Ethernet frame can be built → the packet never leaves
+  the client's NIC. Functionally equivalent to ClusterIP-only for the
+  LAN-reachability property; the only delta is one consumed address
+  in `lab-pool` (30-address pool, one preview-env Gateway —
+  acceptable).
+
+**Decision: Path B (labelled L2-announce opt-out).** Path A doesn't
+deliver the ADR property upstream and carries materially more risk;
+Path B delivers the property today on the current Cilium pin, in a
+~10-line terraform change plus a 3-line Gateway-spec addition. A
+future Cilium upgrade can revisit this if ClusterIP support lands in
+`CiliumGatewayClassConfig`, but the upgrade is no longer load-bearing
+for ADR-0006's "LAN-unreachable by construction" promise.
+
+**What stays.** Every other decision in the original ADR and the two
+prior amendments is unchanged. The mechanism for LAN-unreachability
+changes shape — no LB IP at all → LB IP exists but no L2 announcement
+— but the externally observable property is the same: a LAN device
+cannot deliver a packet to the `projects` Gateway by any means short
+of a static route to the cluster pod-CIDR.
+
+**`lbipam.cilium.io/ips` pin.** The Gateway still omits the pin. With
+no L2 announcement on the resulting Service, the IP is not load-bearing
+for anyone — pinning would add ceremony without value. The lint guard
+([`scripts/lint-apps.sh`](../../../scripts/lint-apps.sh)) treats
+`allowedRoutes.namespaces.from: Selector` as the structural marker for
+"this Gateway isn't on the LB pool by design" and skips the pin check;
+unchanged from #126.
