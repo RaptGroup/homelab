@@ -117,6 +117,21 @@ resource "kubectl_manifest" "cilium_lb_pool" {
 
 # L2 announcements happen on workers only — control planes don't carry user
 # traffic and announcing from them risks ARP flapping during a CP failover.
+#
+# Services carrying `homelab.jackhall.dev/l2-announce: "false"` opt out of
+# L2 announcement. Cilium still allocates an LB-pool IP for them, but no
+# worker ARP-answers for it on the LAN — the IP is unreachable from any
+# LAN device by construction. The opt-out is currently used by the
+# `projects` Gateway's auto-generated Service (ADR-0006, #142) so the
+# preview-env surface stays a Cloudflare-Tunnel-only path. Gateway API
+# v1's `spec.infrastructure.labels` is what propagates the label from
+# the Gateway resource onto the generated Service.
+#
+# `NotIn ["false"]` matches services without the label at all
+# (existing AdGuard, the lab Gateway, future LB Services) AND services
+# whose label value isn't "false". The standard k8s LabelSelector
+# semantics for NotIn cover the absent-key case (apimachinery
+# pkg/labels/selector.go: `if !ls.Has(r.key) { return true }`).
 resource "kubectl_manifest" "cilium_l2_announcement_policy" {
   yaml_body = yamlencode({
     apiVersion = "cilium.io/v2alpha1"
@@ -125,8 +140,18 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
       name = "lab-l2-workers"
     }
     spec = {
-      # Match every Service of type LoadBalancer (no serviceSelector means all).
       loadBalancerIPs = true
+
+      # Skip services that explicitly opt out of L2 announcement.
+      serviceSelector = {
+        matchExpressions = [
+          {
+            key      = "homelab.jackhall.dev/l2-announce"
+            operator = "NotIn"
+            values   = ["false"]
+          },
+        ]
+      }
 
       # Exclude control-plane nodes by node label.
       nodeSelector = {
