@@ -536,6 +536,22 @@ resource "google_service_account_iam_member" "tf_ci_wif_user" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
 }
 
+# Per-secret read on cloudflare-api-token. Project-wide roles/viewer
+# above grants list-but-not-read on Secret Manager versions; reading
+# the cleartext requires the dedicated secretAccessor role. The plan
+# job for terraform/cloudflare/ instantiates the Cloudflare provider
+# with this token at plan time, so widening the plan SA here is
+# load-bearing for that root's PR plan to succeed. Narrow on purpose:
+# bound to a single secret_id, not project-wide secretAccessor — a
+# leak of this SA's tokens still cannot read any other GSM container
+# in the project.
+resource "google_secret_manager_secret_iam_member" "tf_ci_cloudflare_api_token_accessor" {
+  project   = google_project.lab.project_id
+  secret_id = google_secret_manager_secret.cloudflare_api_token.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.tf_ci.email}"
+}
+
 # Apply SA. roles/owner because tofu apply has to (re)create everything in
 # this root, including the WIF pool/provider, project IAM bindings, and the
 # tfstate bucket — narrower predefined roles either don't cover all of those
@@ -573,6 +589,90 @@ resource "google_service_account_iam_member" "tf_ci_apply_wif_user" {
   service_account_id = google_service_account.tf_ci_apply.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.environment/${var.ci_apply_environment}"
+}
+
+# --- terraform/cloudflare/ apply SA -----------------------------------------
+#
+# Unlike tf_ci_apply (above) which holds roles/owner on the whole
+# project because terraform/gcp/ legitimately creates/destroys
+# everything in the project, terraform/cloudflare/'s GCP-side surface
+# is two GSM bindings:
+#
+#   - data: read cloudflare-api-token to instantiate the CF provider
+#   - resource: write a new version to cloudflare-tunnel-token after
+#     CF mints the connector token
+#
+# Plus state I/O against this project's tfstate bucket and a read of
+# terraform/gcp/'s state for the remote_state lookup. Granting
+# roles/owner here would re-create the same broad surface tf_ci_apply
+# carries — pointless when the root's actual GCP needs are this narrow.
+# Instead, the bindings below add up to "read one secret, append one
+# secret version, manage state objects in one bucket" and nothing
+# else. The env-scoped WIF binding pins impersonation to a job whose
+# OIDC token's `environment` claim is `${var.ci_apply_cloudflare_environment}`,
+# parallel to the gcp environment for tf_ci_apply.
+#
+# Most of the apply blast radius is Cloudflare-side, not GCP-side, and
+# the CF API token is scoped at mint time (Zone:Edit + Tunnel:Edit +
+# SSL:Edit on jackhall.dev + the account) — narrowing the CF surface
+# happens there, not here.
+resource "google_service_account" "tf_ci_apply_cloudflare" {
+  project      = google_project.lab.project_id
+  account_id   = var.tf_ci_apply_cloudflare_sa_id
+  display_name = "Terraform CI apply (cloudflare)"
+  description  = "Used by .github/workflows/terraform-apply-cloudflare.yml. Narrow secret-scoped + bucket-scoped GCP permissions, no project IAM. Impersonable only from a job declaring `environment: ${var.ci_apply_cloudflare_environment}`."
+
+  depends_on = [google_project_service.enabled]
+}
+
+# Read the operator-uploaded CF API token. Same secret tf_ci already
+# reads via the binding higher up; binding both SAs at the per-secret
+# level (rather than granting project-wide secretAccessor to either)
+# keeps the reachable secret set minimal.
+resource "google_secret_manager_secret_iam_member" "tf_ci_apply_cloudflare_api_token_accessor" {
+  project   = google_project.lab.project_id
+  secret_id = google_secret_manager_secret.cloudflare_api_token.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.tf_ci_apply_cloudflare.email}"
+}
+
+# Append a new version to cloudflare-tunnel-token. roles/secretmanager.secretVersionAdder
+# is the narrowest predefined role that grants secretmanager.versions.add;
+# crucially it does **not** include secretmanager.versions.access, so a
+# leak of this SA cannot exfiltrate the existing tunnel token, only
+# write a (CF-rejected, because of the secret rotation key) new one.
+# The cleanup of older versions is handled by GSM's own retention,
+# not by this SA.
+resource "google_secret_manager_secret_iam_member" "tf_ci_apply_cloudflare_tunnel_token_version_adder" {
+  project   = google_project.lab.project_id
+  secret_id = google_secret_manager_secret.cloudflare_tunnel_token.secret_id
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = "serviceAccount:${google_service_account.tf_ci_apply_cloudflare.email}"
+}
+
+# State I/O on the tfstate bucket. roles/storage.objectUser covers
+# get/create/delete/list — everything tofu needs to read its own
+# state object, write updates, and acquire GCS-native state locks
+# via object generations. Bucket-scoped, not project-scoped: a leak
+# only reaches state objects in this one bucket. It does include
+# read of terraform/gcp/'s state object (necessary for the
+# remote_state data source) and write of terraform/cloudflare/'s
+# own state object; in principle this SA could also overwrite
+# terraform/gcp/'s state, which is wider than ideal — bounded by
+# the env-scoped WIF gate + required reviewer on the cloudflare
+# environment. Same calculus as tf_ci_apply's roles/owner: trust
+# the impersonation gate as the primary boundary, keep the IAM
+# minimal-but-not-conditional at homelab scale.
+resource "google_storage_bucket_iam_member" "tf_ci_apply_cloudflare_state" {
+  bucket = google_storage_bucket.tfstate.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.tf_ci_apply_cloudflare.email}"
+}
+
+resource "google_service_account_iam_member" "tf_ci_apply_cloudflare_wif_user" {
+  service_account_id = google_service_account.tf_ci_apply_cloudflare.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.environment/${var.ci_apply_cloudflare_environment}"
 }
 
 # --- Artifact Registry: preview-environment images -------------------------

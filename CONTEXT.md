@@ -337,10 +337,16 @@ Both scale sets default to `minRunners: 0`, `maxRunners: 4`, 500m CPU /
 
 ### IaC split
 
-Two — and only two — Terraform roots:
+Three Terraform roots, each owned by a single GitHub deployment
+environment (see CI/CD below):
 
 - `terraform/gcp/` — GCP-side resources (DNS zone, service accounts, GSM
-  secrets, GCS state bucket).
+  secrets, GCS state bucket, Artifact Registry, WIF + the CI service
+  accounts the other roots also depend on).
+- `terraform/cloudflare/` — Cloudflare-side records inside the CF-managed
+  apex `jackhall.dev` zone (apex CAA, lab NS delegation, projects CAA,
+  the ACM wildcard cert pack, the tunnel + its ingress + the wildcard
+  CNAME). Reads `terraform/gcp/`'s outputs via `terraform_remote_state`.
 - `terraform/bootstrap/` — Cluster-side bootstrap (Gateway API CRDs, Cilium,
   cert-manager, ESO, local-path, ArgoCD, the root `Application`).
 
@@ -362,35 +368,59 @@ extras like `Gateway`, `HTTPRoute`, or `ExternalSecret`.
 
 ## CI/CD
 
-### `gcp` (GitHub deployment environment)
+### `gcp` and `cloudflare` (GitHub deployment environments)
 
-The protected GitHub environment that gates apply credentials for
-`terraform/gcp/`. Carries deployment-branch restriction = `main` and
-required reviewer = repo owner. The
-[`terraform-apply.yml`](.github/workflows/terraform-apply.yml) workflow's
-`apply` job declares `environment: gcp`; GitHub holds the job in
-`Waiting` until a reviewer approves, and the OIDC token issued for
-the job carries `environment: gcp` as a claim that GCP's WIF binding
-keys on. Created manually in the GitHub UI — there is no Terraform
-resource for "GitHub deployment environment" in this repo. See
-ADR-0004.
+Two protected GitHub environments, one per Terraform root that has a
+CI apply path. Both carry deployment-branch restriction = `main` and
+required reviewer = repo owner. Both are created manually in the
+GitHub UI — there is no Terraform resource for "GitHub deployment
+environment" in this repo. See ADR-0004.
 
-### `tf-ci-plan` and `tf-ci-apply` (CI service accounts)
+- **`gcp`** gates apply credentials for `terraform/gcp/`. The
+  [`terraform-apply.yml`](.github/workflows/terraform-apply.yml)
+  workflow's `apply` job declares `environment: gcp`; GitHub holds
+  the job in `Waiting` until a reviewer approves, and the OIDC token
+  issued for the job carries `environment: gcp` as a claim that
+  GCP's WIF binding on `tf-ci-apply` keys on.
+- **`cloudflare`** gates apply credentials for `terraform/cloudflare/`.
+  The [`terraform-apply-cloudflare.yml`](.github/workflows/terraform-apply-cloudflare.yml)
+  workflow's `apply` job declares `environment: cloudflare`; same
+  shape as `gcp` but the WIF binding it satisfies is on the
+  narrower `tf-ci-apply-cloudflare` SA below.
 
-The two GCP service accounts CI uses to talk to the
-`rockingham-homelab` project. Provisioned by `terraform/gcp/`:
+Convention: environment names mirror Terraform root names
+(`gcp` ↔ `terraform/gcp/`, `cloudflare` ↔ `terraform/cloudflare/`).
 
-- **`tf-ci-plan`** — `roles/viewer` on the project. Consumed by
-  `terraform-plan.yml` (PR plans) and the `plan` job of
-  `terraform-apply.yml` (apply-time re-plan). Impersonable from any
-  workflow job whose OIDC token's `repository` claim matches
-  `var.github_repository`.
+### `tf-ci-plan`, `tf-ci-apply`, `tf-ci-apply-cloudflare` (CI service accounts)
+
+The three GCP service accounts CI uses to talk to the
+`rockingham-homelab` project. All provisioned by `terraform/gcp/`:
+
+- **`tf-ci-plan`** — `roles/viewer` on the project, plus a per-secret
+  `roles/secretmanager.secretAccessor` binding on `cloudflare-api-token`
+  (so the cloudflare root's plan job can instantiate the Cloudflare
+  provider). Consumed by `terraform-plan.yml` for PR plans on every
+  root and the `plan` job of both apply workflows for apply-time
+  re-plan. Impersonable from any workflow job whose OIDC token's
+  `repository` claim matches `var.github_repository`.
 - **`tf-ci-apply`** — `roles/owner` on the project. Consumed by the
   `apply` job of `terraform-apply.yml`. Impersonable only from a job
   that declares `environment: gcp`; combined with the provider's
   repo lock, this is equivalent to the
   `repo:RaptGroup/homelab:environment:gcp` selector. Reachable only
   after a reviewer approves the deployment in the GitHub UI.
+- **`tf-ci-apply-cloudflare`** — narrow secret-scoped +
+  bucket-scoped: `roles/secretmanager.secretAccessor` on
+  `cloudflare-api-token`, `roles/secretmanager.secretVersionAdder`
+  on `cloudflare-tunnel-token`, `roles/storage.objectUser` on the
+  tfstate bucket. **No project IAM.** Consumed by the `apply` job
+  of `terraform-apply-cloudflare.yml`. Impersonable only from a job
+  declaring `environment: cloudflare`. Narrower than `tf-ci-apply`
+  because the cloudflare root's GCP-side surface is just two GSM
+  bindings + its own state I/O — granting `roles/owner` here would
+  duplicate `tf-ci-apply`'s blast radius for no functional gain.
+  Most of the apply boundary is Cloudflare-side and lives in the
+  scoping of the CF API token at mint time, not in this SA.
 
 Plan and apply credentials are deliberately separate so a token
 compromised mid-plan cannot apply.

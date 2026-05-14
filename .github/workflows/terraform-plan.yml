@@ -39,7 +39,7 @@ jobs:
 
           # Hardcoded root list — auto-discovery would pick up sub-modules.
           # New roots get added here explicitly.
-          candidates=(gcp bootstrap)
+          candidates=(gcp bootstrap cloudflare)
 
           # If the workflow itself changed, re-plan every root that exists
           # in the PR (same pattern as apps-lint.yml).
@@ -108,12 +108,21 @@ jobs:
           WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
           CI_SA: ${{ vars.GCP_CI_SA }}
           BILLING_ACCOUNT: ${{ secrets.GCP_BILLING_ACCOUNT }}
+          # Only required for the cloudflare root; checked conditionally
+          # below so PRs that don't touch terraform/cloudflare/ keep
+          # passing without it.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          ROOT: ${{ matrix.root }}
         run: |
           set -euo pipefail
           missing=()
           [[ -z "${WIF_PROVIDER}" ]]    && missing+=("variable GCP_WIF_PROVIDER")
           [[ -z "${CI_SA}" ]]           && missing+=("variable GCP_CI_SA")
           [[ -z "${BILLING_ACCOUNT}" ]] && missing+=("secret GCP_BILLING_ACCOUNT")
+
+          if [[ "${ROOT}" == "cloudflare" ]]; then
+            [[ -z "${CLOUDFLARE_ACCOUNT_ID}" ]] && missing+=("variable CLOUDFLARE_ACCOUNT_ID")
+          fi
 
           if (( ${#missing[@]} > 0 )); then
             {
@@ -127,6 +136,10 @@ jobs:
               echo "Then set them in GitHub: Settings → Secrets and variables → Actions"
               echo "  Variables tab: GCP_WIF_PROVIDER, GCP_CI_SA"
               echo "  Secrets tab:   GCP_BILLING_ACCOUNT (same value as terraform.tfvars)"
+              echo
+              echo "For the cloudflare root, also set:"
+              echo "  Variables tab: CLOUDFLARE_ACCOUNT_ID (value from CF dashboard top-right;"
+              echo "                 same value as terraform/cloudflare/terraform.tfvars)"
               echo
               echo "See terraform/gcp/README.md, section \"CI: GitHub Actions auth\"."
             } >&2
@@ -189,7 +202,11 @@ jobs:
           # CI passes required tfvars via TF_VAR_* env vars from secrets.
           # Variables that are sensitive or absent from a checked-in
           # *.tfvars file (those are gitignored) must be wired here.
+          # Unknown TF_VAR_* env vars are silently ignored by tofu for
+          # roots that don't declare the variable, so passing both keys
+          # for every matrix entry is a no-op outside the matching root.
           TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT }}
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
           plan_args=(-input=false -no-color -lock=false -detailed-exitcode -out=tfplan)
