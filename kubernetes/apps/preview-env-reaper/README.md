@@ -35,16 +35,29 @@ annotation is structurally out of scope.
 | `ClusterRole`         | `list` + `delete` on `namespaces` cluster-wide. Nothing else.                                             |
 | `ClusterRoleBinding`  | Binds the ClusterRole to the SA.                                                                          |
 | `ConfigMap`           | Holds the `reap.sh` script. Read-only mount at `/scripts` in the CronJob pod.                             |
-| `CronJob`             | `0 * * * *` UTC, `concurrencyPolicy: Forbid`. Runs the script in a `bitnami/kubectl` pod with no rootfs.  |
+| `CronJob`             | `0 * * * *` UTC, `concurrencyPolicy: Forbid`. Runs the script in a `bitnamilegacy/kubectl` pod with no rootfs. |
 
 ## Image choice
 
-`docker.io/bitnami/kubectl:1.31.0`. Debian-slim base, ships `kubectl`
-plus GNU coreutils (the script needs `date -d <RFC3339>` to compare
-the annotation against now — busybox `date` doesn't parse the full
-RFC3339 grammar including offsets and fractional seconds). Pinned to
-a specific patch; bump in lockstep with the cluster's Kubernetes
-minor.
+`docker.io/bitnamilegacy/kubectl:1.33.4`. Debian-slim base, ships
+`kubectl` plus GNU coreutils — the script needs `date -d <RFC3339>`
+to compare the annotation against now, and busybox `date` doesn't
+parse the full RFC3339 grammar (offsets, fractional seconds), which
+rules out alpine-based alternatives like `alpine/k8s`.
+
+The image lives under `bitnamilegacy/*` because Bitnami's Aug 2025
+catalog migration stripped versioned tags from `docker.io/bitnami/*`
+and moved free public copies here ([#171](https://github.com/RaptGroup/homelab/issues/171)).
+The legacy mirror is frozen at the migration snapshot — `1.33.4` is
+the highest tag and won't move. The earlier "bump in lockstep with
+the cluster's Kubernetes minor" advice no longer applies via this
+image source; with kubectl pinned at 1.33 and the cluster at 1.36+,
+the skew is outside the officially-supported ±1-minor window, but the
+script only exercises `get namespace` and `delete namespace
+--wait=false`, both stable across this range. If a real
+incompatibility ever surfaces, rewrite the script to busybox-compatible
+date parsing (`awk mktime()` over an RFC3339 split) and switch to
+`docker.io/alpine/k8s:<cluster-minor>`.
 
 ## Why a CronJob, not a controller
 
