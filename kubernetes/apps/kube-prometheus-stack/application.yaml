@@ -1,0 +1,54 @@
+# kube-prometheus-stack — Prometheus + Grafana + Alertmanager + node-exporter
+# + kube-state-metrics + the bundled dashboard library. First slice of the
+# self-hosted observability stack (ADR-0007); Loki and Alloy land as their
+# own Applications in later slices.
+#
+# Multi-source layout (mirrors kubernetes/apps/longhorn/):
+#   - Source 1: prometheus-community/kube-prometheus-stack from the
+#     upstream Helm repo.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives in
+#     Git alongside the Application.
+#   - Source 3: the manifests/ directory in this repo, holding the
+#     observability Namespace (with the PodSecurity label), the Grafana
+#     HTTPRoute, and the ExternalSecret for the admin password. Argo
+#     applies these directly without templating.
+#
+# Default sync wave: this Application has no hard ordering against the
+# other observability slices (ADR-0007 explicitly says "all three default
+# (wave 0) — no hard ordering needed"). The `observability` Namespace
+# itself is declared here in manifests/ so Loki and Alloy can attach to
+# it without owning their own Namespace manifest.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 85.0.3
+      helm:
+        releaseName: kube-prometheus-stack
+        valueFiles:
+          - $values/kubernetes/apps/kube-prometheus-stack/helm-values.yaml
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/kube-prometheus-stack/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

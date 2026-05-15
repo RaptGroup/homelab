@@ -1,0 +1,48 @@
+# grafana.lab.jackhall.dev → Grafana (chart-rendered Service
+# `kube-prometheus-stack-grafana` in this namespace). Attaches
+# cross-namespace to the central `lab` Cilium Gateway in
+# gateway-system (#48); TLS terminates there with the wildcard cert
+# (ADR-0003's *.lab.jackhall.dev DNS-01 issuance). The hop into the
+# pod is plaintext on port 80, matching every other addon's
+# HTTPRoute in this repo.
+#
+# No backend ReferenceGrant: the HTTPRoute and the Grafana Service
+# both live in `observability`. The Gateway's
+# `allowedRoutes.namespaces.from: All` already covers cross-namespace
+# attachment to gateway-system, so no per-route grant is needed
+# there either.
+#
+# No `gethomepage.dev/*` annotations on this slice. The Homepage
+# auto-discovery wiring for the observability surface lands with
+# the Loki + Alloy slices once the stack as a whole is demoable —
+# adding the card now points it at half a stack.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: observability
+spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile — same fix-pattern as every other
+  # HTTPRoute in this repo (#29, #33).
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: gateway-system
+      name: lab
+      sectionName: https
+  hostnames:
+    - grafana.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: kube-prometheus-stack-grafana
+          port: 80
+          weight: 1

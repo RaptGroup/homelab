@@ -1,0 +1,139 @@
+# kube-prometheus-stack values — first slice of the ADR-0007
+# observability stack. Re-read ADR-0007 before touching anything in this
+# file; the values below encode that decision record directly.
+#
+# THE NIL-USES-HELM-VALUES TRAP (must outlive any future chart bump)
+#
+#   By upstream default, the Prometheus Operator treats a *nil* selector
+#   on the Prometheus CR as "scope to selectors that match this chart
+#   release's Helm labels." A user who writes
+#       serviceMonitorSelector: {}
+#   alone — expecting "select everything" — instead gets "scope to the
+#   chart's release labels only", because the chart's
+#   `serviceMonitorSelectorNilUsesHelmValues: true` rewrites an empty
+#   selector to a chart-scoped one at template time. This is the
+#   "only-chart-labelled-ServiceMonitors-are-discovered" footgun.
+#
+#   The fix is two-part and BOTH halves must stay set on every chart
+#   bump:
+#     1. *NilUsesHelmValues flipped to false for serviceMonitor,
+#        podMonitor, rule, and probe — so an empty selector means what
+#        it literally says.
+#     2. Each of the four *Selector keys explicitly set to {} —
+#        wide-open discovery across every namespace.
+#
+#   The *NamespaceSelector keys also set to {} so the operator scans
+#   every namespace, not just `observability`. The developer contract
+#   from ADR-0007 ("drop a ServiceMonitor next to your Service, no
+#   namespace labelling, it just works") fails if any of these six
+#   knobs regresses.
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    # Alertmanager UI is ClusterIP-only per ADR-0007 ("Prometheus and
+    # Alertmanager are ClusterIP-only — raw UIs reachable by kubectl
+    # port-forward"); no HTTPRoute, no public surface. Grafana is the
+    # only externally-routed surface of this stack.
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+grafana:
+  enabled: true
+
+  # Grafana admin password is sourced via ESO from the
+  # `grafana-admin-password` GSM container — see
+  # manifests/external-secret-grafana-admin.yaml. The K8s Secret
+  # `grafana-admin` carries `admin-user` and `admin-password` keys, the
+  # default key names this chart's `admin.userKey` / `admin.passwordKey`
+  # expect.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  # Anonymous viewers enabled per ADR-0007 (Q7 in the PRD). A LAN
+  # visitor at https://grafana.lab.jackhall.dev sees dashboards
+  # immediately, no login. Editing (creating dashboards, modifying
+  # alerts, touching datasources) requires the admin login above.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+
+  # SQLite PVC (the chart's default DB). 10 GB on longhorn — singleton,
+  # valuable (dashboards-as-code aside, the operator's drafts live
+  # here), must survive node drain. Matches ADR-0007's four-PVC list.
+  persistence:
+    enabled: true
+    type: sts
+    storageClassName: longhorn
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    finalizers:
+      - kubernetes.io/pvc-protection
+
+  # The Grafana sidecar watches ConfigMaps labelled `grafana_dashboard`
+  # across all namespaces and provisions their JSON into Grafana on
+  # boot. Repo-owned dashboard JSON files land in a later slice
+  # (kubernetes/apps/kube-prometheus-stack/dashboards/) wrapped in
+  # ConfigMaps by Kustomize; this slice ships the chart-bundled
+  # dashboard library only.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+    # The chart's sidecar.datasources block provisions the Prometheus
+    # datasource (default, in-cluster) automatically. Loki datasource
+    # is intentionally deferred — added in the Loki slice (#176 plan,
+    # tracer-bullet #4).
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+
+  # No Ingress — Grafana is reached via the HTTPRoute under
+  # manifests/grafana-httproute.yaml attaching to the central `lab`
+  # Cilium Gateway (cross-namespace parentRef). No annotations on the
+  # Service either (chart default ClusterIP is correct).
+  ingress:
+    enabled: false
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Retention per ADR-0007: 30 days of metrics. The 100 GB PVC sizes
+    # for this window assuming the addon scrape set plus future
+    # audience-B ServiceMonitors; bump the PVC (and document a resize
+    # path) if the size becomes binding.
+    retention: 30d
+
+    # See the top-of-file comment naming the nil-uses-helm-values
+    # trap. All six knobs below must stay set together.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    probeSelectorNilUsesHelmValues: false
+    probeSelector: {}
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 100Gi
