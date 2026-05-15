@@ -26,16 +26,18 @@ the wrong order.
 2. **Cilium** — Helm chart with the Talos values pinned in `cilium.tf`,
    plus a `CiliumLoadBalancerIPPool` covering `192.168.1.200`–`230` and
    a `CiliumL2AnnouncementPolicy` that excludes control-plane nodes.
-3. **cert-manager** — Helm chart. The `ClusterIssuer` and wildcard
-   `Certificate` are created later (after step 4) so the DNS-01 SA key
-   can be sourced through ESO instead of written by Terraform.
+3. **cert-manager** — Helm chart, plus a ConfigMap holding the
+   `external_account` credentials JSON the controller's ADC reads to
+   authenticate Cloud DNS for DNS-01 challenges (see "DNS-01 auth path"
+   below). The `ClusterIssuer` and wildcard `Certificate` come up in
+   this same step — no dependency on ESO.
 4. **External Secrets Operator** — Helm chart and a `ClusterSecretStore`
    named `gsm`. The store authenticates to GCP via cluster→GCP
-   Workload Identity Federation (the same pool #139 created for the
-   AR-pull path; see [ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)) —
-   Terraform creates no `Secret` directly. Once ESO is up, the
-   cert-manager `ExternalSecret` syncs the DNS-01 key, then the
-   `ClusterIssuer` and wildcard `Certificate` come up.
+   Workload Identity Federation (the same pool #161 created for the
+   AR-pull path; see [ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md))
+   — Terraform creates no `Secret` directly. Once this is up the rest
+   of the in-cluster `ExternalSecret`s (homepage widgets, adguard, ARC,
+   longhorn, cloudflared) can sync their GSM-backed values into K8s.
 5. **local-path-provisioner** — applied from the upstream
    `deploy/local-path-storage.yaml`, then annotated as the cluster's
    default `StorageClass`.
@@ -50,8 +52,11 @@ the wrong order.
   `Ready` (Cilium will mark them `Ready` after install if the kubelet
   was waiting on a CNI).
 - **`terraform/gcp/` already applied.** This root reads its outputs
-  (`project_id`, `lab_zone_name`, `cert_manager_sa_email`, `eso_sa_email`)
-  out of the GCS-backed remote state.
+  (`project_id`, `lab_zone_name`, `cert_manager_sa_email`, `eso_sa_email`,
+  `cluster_wif_provider`) out of the GCS-backed remote state. The cluster
+  WIF pool, OIDC bucket, and the `eso` + `cert_manager` impersonation
+  bindings all live in `terraform/gcp/` and must exist before this root
+  applies.
 - **NS records delegated.** The four nameservers from
   `tofu output -json lab_zone_name_servers` must be live at the
   registrar for `lab.jackhall.dev`. Without delegation, ACME DNS-01
@@ -60,16 +65,17 @@ the wrong order.
 - **Application-default credentials.** `gcloud auth
   application-default login` so the `google` provider can read project
   state and so the GCS backend can read TF state.
-- **OIDC discovery document and JWKS published.** ESO authenticates to
-  GCP via Workload Identity Federation against the cluster's own OIDC
-  issuer (see [ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)).
-  Before `tofu apply` in this root, the cluster's
-  `/.well-known/openid-configuration` and `/openid/v1/jwks` must be
-  reachable at the public issuer URL (Cloud DNS → GCS bucket; see #139
-  for the recipe). On a brand-new cluster the order is
-  `terraform/talos/` → JWKS upload → `terraform/gcp/` → this root.
-  Skip this step and ESO's `ClusterSecretStore gsm` reports
-  `Ready=False` with a token-exchange error after apply.
+- **OIDC discovery document and JWKS published.** Both ESO and
+  cert-manager authenticate to GCP via Workload Identity Federation
+  against the cluster's own OIDC issuer (ADR-0007 + the cert-manager
+  DNS-01 path documented below). Before `tofu apply` in this root, the
+  cluster's `/.well-known/openid-configuration` and `/openid/v1/jwks`
+  must be reachable at the public issuer URL (Cloud DNS → GCS bucket;
+  see #139 for the recipe). On a brand-new cluster the order is
+  `terraform/talos/` → JWKS upload → `terraform/gcp/` → this root. Skip
+  this step and ESO's `ClusterSecretStore gsm` reports `Ready=False`
+  with a token-exchange error; cert-manager's wildcard `Certificate`
+  fails the DNS-01 challenge with the same root cause.
 
 ## Inputs
 
@@ -114,6 +120,40 @@ wildcard `Certificate`, the LE `ClusterIssuer`, and the `gsm`
 `ClusterSecretStore`. See the repo-root [`README.md`](../../README.md)
 for prerequisites.
 
+## DNS-01 auth path
+
+cert-manager authenticates to Cloud DNS via the cluster's Workload
+Identity Federation pool — no JSON key anywhere on the issuance path.
+
+```
+controller Pod (cert-manager/cert-manager)
+  └── projected SA token (aud = cluster WIF provider FRN)
+        └── GCP STS exchange (external_account creds from ConfigMap)
+              └── impersonate cert-manager-dns01 (zone-scoped dns.admin)
+                    └── DNS-01 TXT record on lab.jackhall.dev zone
+```
+
+What lives where:
+
+- **`terraform/gcp/`** owns the `cert_manager` GCP SA, its zone-scoped
+  `roles/dns.admin` binding on `lab.jackhall.dev`, the cluster OIDC
+  WIF pool/provider (shared with the AR-pull path), and the
+  `workloadIdentityUser` binding that lets
+  `system:serviceaccount:cert-manager:cert-manager` impersonate
+  `cert-manager-dns01`. None of these have a JSON key.
+- **`terraform/bootstrap/cert-manager.tf`** owns the
+  `cert-manager-gcp-credentials` ConfigMap holding the `external_account`
+  JSON, the controller's Helm values (projected SA-token volume +
+  ConfigMap volume + `GOOGLE_APPLICATION_CREDENTIALS`), and the
+  `letsencrypt-dns01` `ClusterIssuer`. The ClusterIssuer's `cloudDNS`
+  block names the project + zone and otherwise falls through to ADC.
+
+Rotation: there's nothing to rotate. The projected SA token is hourly
+and minted on demand by kubelet; the federated principal lives only for
+the length of one STS exchange. The cert-manager GCP SA's underlying
+identity rotates only if Talos's cluster signing keys are regenerated
+(operator-side recipe in `talos/README.md` covers the JWKS re-upload).
+
 ## Idempotency
 
 Re-running `tofu apply` on an already-bootstrapped cluster is a no-op.
@@ -143,17 +183,29 @@ re-applied each run.
 If the `Certificate` shows `Ready=False` after apply, check
 `kubectl -n cert-manager describe certificate wildcard-lab-jackhall-dev`
 and `kubectl -n cert-manager describe clusterissuer letsencrypt-dns01`.
-The most common cause is NS delegation not yet propagated.
+The most common cause is NS delegation not yet propagated. If the
+controller logs show `oauth2/google: ... Unable to read credentials file`
+or `iamcredentials.googleapis.com ... Permission denied`, the keyless
+DNS-01 path is misconfigured: verify the `cert-manager-gcp-credentials`
+ConfigMap exists, the controller pod has the `gcp-token` projected
+volume + `gcp-credentials` ConfigMap volume mounted, and the
+`cert_manager_wif_user` binding in `terraform/gcp/main.tf` matches the
+chart-rendered controller SA name (currently `cert-manager`/`cert-manager`).
 
 **External Secrets Operator (step 4).** If ESO comes up but the
 `ClusterSecretStore gsm` shows `Ready=False`, the most common causes
 are: the OIDC discovery document or JWKS isn't reachable at the
-public issuer URL (re-run the upload from #139's recipe; verify with
-`curl https://oidc.lab.jackhall.dev/.well-known/openid-configuration`);
-the WIF binding on `external-secrets@…` doesn't trust the K8s SA
-principal (check `terraform/gcp/` plan); or the GCP SA lacks
-`roles/secretmanager.secretAccessor` (verify in `terraform/gcp/`).
-See [ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)
+public issuer URL (re-run the upload from #139's recipe; the issuer
+URL is `tofu -chdir=../gcp output -raw cluster_oidc_issuer`, verify
+with `curl "$(tofu -chdir=../gcp output -raw cluster_oidc_issuer)/.well-known/openid-configuration"`
+and `…/openid/v1/jwks`); the WIF binding on `external-secrets@…`
+doesn't trust the `system:serviceaccount:external-secrets:external-secrets-gsm`
+principal (check `terraform/gcp/` plan for `eso_wif_user`); or the GCP
+SA lacks `roles/secretmanager.secretAccessor` (verify in
+`terraform/gcp/`). `kubectl -n external-secrets describe
+clustersecretstore gsm` surfaces the underlying GCP STS error verbatim
+in the `Status.Conditions[Ready].Message` field. See
+[ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)
 for the auth shape.
 
 **local-path-provisioner (step 5).** Inspect:

@@ -57,6 +57,18 @@ variable "cert_manager_sa_id" {
   default     = "cert-manager-dns01"
 }
 
+variable "cert_manager_k8s_namespace" {
+  description = "Kubernetes namespace whose ServiceAccount is allowed to impersonate cert-manager-dns01 through the cluster's WIF. The cert-manager Helm release runs in `cert-manager`; the controller's projected SA token is the input to the GCP STS exchange that yields a federated principal authorized to impersonate the cert_manager GCP SA."
+  type        = string
+  default     = "cert-manager"
+}
+
+variable "cert_manager_k8s_sa" {
+  description = "Kubernetes ServiceAccount name (inside cert_manager_k8s_namespace) whose projected token is exchanged for cert-manager-dns01 credentials. Must match the controller SA the cert-manager chart renders — the Jetstack chart's `cert-manager.fullname` template resolves to `cert-manager` when both Release.Name and Chart.Name are `cert-manager`, which is the case in terraform/bootstrap/cert-manager.tf."
+  type        = string
+  default     = "cert-manager"
+}
+
 variable "eso_sa_id" {
   description = "Service account ID (the part before @) for External Secrets Operator."
   type        = string
@@ -178,6 +190,18 @@ variable "cluster_pull_k8s_sa" {
   description = "Kubernetes ServiceAccount name (inside cluster_pull_k8s_namespace) whose projected token is exchanged for tf-ci-cluster-pull credentials. Must match the SA created in kubernetes/apps/ar-canary/manifests/serviceaccount.yaml."
   type        = string
   default     = "ar-canary-puller"
+}
+
+variable "eso_k8s_namespace" {
+  description = "Kubernetes namespace whose ServiceAccount is allowed to impersonate the `external-secrets` GCP SA through the cluster's WIF (ADR-0007). Must match the namespace the External Secrets Operator Helm chart is installed in by terraform/bootstrap/."
+  type        = string
+  default     = "external-secrets"
+}
+
+variable "eso_k8s_sa" {
+  description = "Kubernetes ServiceAccount name (inside eso_k8s_namespace) whose projected token is exchanged for the `external-secrets` GCP SA's credentials at bootstrap time. Must match the kubernetes_service_account created in terraform/bootstrap/external-secrets.tf and referenced from the `gsm` ClusterSecretStore's serviceAccountRef."
+  type        = string
+  default     = "external-secrets-gsm"
 }
 
 variable "longhorn_backup_sa_id" {
