@@ -102,10 +102,25 @@ grafana:
 
   # No Ingress — Grafana is reached via the HTTPRoute under
   # manifests/grafana-httproute.yaml attaching to the central `lab`
-  # Cilium Gateway (cross-namespace parentRef). No annotations on the
-  # Service either (chart default ClusterIP is correct).
+  # Cilium Gateway (cross-namespace parentRef). Chart default
+  # ClusterIP Service type is correct.
   ingress:
     enabled: false
+
+  # gethomepage.dev/* annotations mirrored onto the Grafana Service.
+  # Homepage's HTTPRoute discovery (kubernetes.gateway: true) reads the
+  # copy on manifests/grafana-httproute.yaml; this duplicate exists per
+  # the convention documented in homepage/helm-values.yaml — the pattern
+  # is visible on the primary Service of every addon, not only on its
+  # routing object. Keep both copies in sync on edits.
+  service:
+    annotations:
+      gethomepage.dev/enabled: "true"
+      gethomepage.dev/name: Grafana
+      gethomepage.dev/description: Metrics + logs dashboards
+      gethomepage.dev/group: Observability
+      gethomepage.dev/icon: grafana.svg
+      gethomepage.dev/href: https://grafana.lab.jackhall.dev
 
 prometheus:
   enabled: true
