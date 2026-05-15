@@ -180,6 +180,18 @@ variable "cluster_pull_k8s_sa" {
   default     = "ar-canary-puller"
 }
 
+variable "eso_k8s_namespace" {
+  description = "Kubernetes namespace whose ServiceAccount is allowed to impersonate the `external-secrets` GCP SA through the cluster's WIF (ADR-0007). Must match the namespace the External Secrets Operator Helm chart is installed in by terraform/bootstrap/."
+  type        = string
+  default     = "external-secrets"
+}
+
+variable "eso_k8s_sa" {
+  description = "Kubernetes ServiceAccount name (inside eso_k8s_namespace) whose projected token is exchanged for the `external-secrets` GCP SA's credentials at bootstrap time. Must match the kubernetes_service_account created in terraform/bootstrap/external-secrets.tf and referenced from the `gsm` ClusterSecretStore's serviceAccountRef."
+  type        = string
+  default     = "external-secrets-gsm"
+}
+
 variable "longhorn_backup_sa_id" {
   description = "Service account ID (the part before @) for the Longhorn backup-target SA. roles/storage.objectAdmin scoped to the longhorn-backups bucket only — a leak cannot reach any other bucket or object in the project. The SA's HMAC key (minted out of band; see terraform/gcp/README.md) is what Longhorn uses to authenticate against the GCS S3 interoperability API."
   type        = string

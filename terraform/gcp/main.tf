@@ -908,6 +908,26 @@ resource "google_service_account_iam_member" "cluster_pull_wif_user" {
   member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.cluster_pull_k8s_namespace}:${var.cluster_pull_k8s_sa}"
 }
 
+# Bootstrap ESO's GSM access via the same cluster WIF pool (ADR-0007).
+# The `external-secrets-gsm` K8s ServiceAccount in the
+# `external-secrets` namespace is the workload-identity principal; ESO
+# mints a projected token for it, exchanges it at GCP STS for a
+# federated token, then impersonates the `external-secrets` GCP SA
+# (authorized by this binding) to read GSM. The project-scoped
+# `roles/secretmanager.secretAccessor` binding higher up is what gives
+# the impersonated SA actual read access; this binding only authorizes
+# the impersonation hop. No long-lived JSON key on the bootstrap path.
+#
+# Namespace/SA strings must match the kubernetes_service_account
+# resource in `terraform/bootstrap/external-secrets.tf` and the
+# `serviceAccountRef` in the `gsm` ClusterSecretStore manifest — the
+# constraint is named here as the GCP-side IAM gate.
+resource "google_service_account_iam_member" "eso_wif_user" {
+  service_account_id = google_service_account.eso.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.cluster.name}/subject/system:serviceaccount:${var.eso_k8s_namespace}:${var.eso_k8s_sa}"
+}
+
 # --- Longhorn off-site backups (GCS via S3 interop) ------------------------
 #
 # Longhorn writes snapshot/backup data to GCS through the bucket's S3
