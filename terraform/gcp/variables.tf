@@ -57,6 +57,18 @@ variable "cert_manager_sa_id" {
   default     = "cert-manager-dns01"
 }
 
+variable "cert_manager_k8s_namespace" {
+  description = "Kubernetes namespace whose ServiceAccount is allowed to impersonate cert-manager-dns01 through the cluster's WIF. The cert-manager Helm release runs in `cert-manager`; the controller's projected SA token is the input to the GCP STS exchange that yields a federated principal authorized to impersonate the cert_manager GCP SA."
+  type        = string
+  default     = "cert-manager"
+}
+
+variable "cert_manager_k8s_sa" {
+  description = "Kubernetes ServiceAccount name (inside cert_manager_k8s_namespace) whose projected token is exchanged for cert-manager-dns01 credentials. Must match the controller SA the cert-manager chart renders — the Jetstack chart's `cert-manager.fullname` template resolves to `cert-manager` when both Release.Name and Chart.Name are `cert-manager`, which is the case in terraform/bootstrap/cert-manager.tf."
+  type        = string
+  default     = "cert-manager"
+}
+
 variable "eso_sa_id" {
   description = "Service account ID (the part before @) for External Secrets Operator."
   type        = string
