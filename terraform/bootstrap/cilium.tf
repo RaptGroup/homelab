@@ -215,3 +215,36 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
 
   depends_on = [helm_release.cilium]
 }
+
+# L7 proxy-port resync — mitigation for the 2026-05-15 lab-Gateway
+# outage (#196). Cilium runs Envoy as a separate long-lived DaemonSet
+# (external-envoy mode). Any change to `helm_release.cilium` rolls the
+# cilium-agent DaemonSet, and a restarted agent re-allocates the L7
+# (Gateway API) proxy ports — but the chart never rolls `cilium-envoy`,
+# so the envoy pods keep their listeners on the OLD ports. eBPF then
+# redirects every `*.lab.jackhall.dev` Gateway flow to a dead proxy
+# port and the lab Gateway blackholes until envoy is restarted too.
+#
+# This resource force-rolls `cilium-envoy` whenever the Cilium release
+# revision moves, closing that gap automatically on every apply that
+# touches Cilium. It needs a `kubectl` binary on the apply runner — the
+# bootstrap root already requires cluster kubeconfig access for its
+# providers, so this only adds the binary dependency.
+#
+# Mitigation, not cure: a brief (~1-2 min) degraded window remains
+# during the apply itself, and the underlying proxy-port instability is
+# tied to running Cilium 1.16 on Kubernetes 1.36 (an unsupported
+# pairing). The cure is the Cilium upgrade tracked in #196.
+resource "terraform_data" "cilium_envoy_resync" {
+  # Bumps on every helm upgrade of the Cilium release.
+  triggers_replace = [helm_release.cilium.metadata[0].revision]
+
+  provisioner "local-exec" {
+    # `kubectl` must be on the apply runner; `--context` is passed only
+    # when var.kube_context is set, matching providers.tf.
+    command = <<-EOT
+      kubectl --kubeconfig "${var.kubeconfig_path}" ${var.kube_context != "" ? "--context ${var.kube_context}" : ""} -n kube-system rollout restart daemonset/cilium-envoy &&
+      kubectl --kubeconfig "${var.kubeconfig_path}" ${var.kube_context != "" ? "--context ${var.kube_context}" : ""} -n kube-system rollout status  daemonset/cilium-envoy --timeout=300s
+    EOT
+  }
+}
