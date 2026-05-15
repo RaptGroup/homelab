@@ -44,15 +44,60 @@ resource "helm_release" "cilium" {
       enabled = true
     }
 
-    # Hubble flow visibility ships with Cilium and is the entire Tier 1
-    # observability story (ADR-0003 / observability memory). UI is exposed
-    # via Gateway API later as an ArgoCD app, not here.
+    # Hubble flow visibility ships with Cilium. The UI is exposed via
+    # Gateway API later as an ArgoCD app, not here. Hubble UI stays the
+    # live flow-forensic view; ADR-0007 adds a self-hosted Prometheus +
+    # Grafana stack that scrapes Hubble's *metrics* endpoint for the
+    # time-series view — `metrics` below turns that endpoint on.
     hubble = {
       enabled = true
+
+      # Per-flow Prometheus metrics. The enabled list is the metric
+      # families Hubble exports on its metrics endpoint; the
+      # Cilium/Hubble Grafana dashboard shipped with the
+      # kube-prometheus-stack addon reads exactly these. Keep this list
+      # and the dashboard in sync. `serviceMonitor.enabled` makes the
+      # chart render a ServiceMonitor — see the CRD-ordering note on
+      # `prometheus` below.
+      metrics = {
+        enabled = [
+          "dns",
+          "drop",
+          "tcp",
+          "flow",
+          "port-distribution",
+          "icmp",
+          "httpV2",
+        ]
+        serviceMonitor = {
+          enabled = true
+        }
+      }
+
       relay = {
         enabled = true
       }
       ui = {
+        enabled = true
+      }
+    }
+
+    # Cilium agent Prometheus metrics. `enabled` opens the agent's
+    # metrics endpoint; `serviceMonitor.enabled` makes the chart render
+    # a `monitoring.coreos.com/v1` ServiceMonitor so Prometheus scrapes
+    # it (ADR-0007).
+    #
+    # CRD-ORDERING NOTE — load-bearing for a cold re-bootstrap. The
+    # ServiceMonitor CRD (`monitoring.coreos.com/v1`) ships with the
+    # kube-prometheus-stack ArgoCD app, which lands *after* this
+    # bootstrap root. On the running cluster the CRD already exists, so
+    # `tofu apply` here is clean. On a from-scratch re-bootstrap this
+    # step renders ServiceMonitors before that CRD exists — apply the
+    # kube-prometheus-stack CRDs first, or re-run this root once ArgoCD
+    # has synced kube-prometheus-stack.
+    prometheus = {
+      enabled = true
+      serviceMonitor = {
         enabled = true
       }
     }

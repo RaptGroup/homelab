@@ -1,0 +1,39 @@
+# Repo-owned Grafana dashboards, wrapped as ConfigMaps for the Grafana
+# sidecar to provision on boot.
+#
+# The sidecar (helm-values.yaml: `grafana.sidecar.dashboards`) watches
+# every namespace for ConfigMaps labelled `grafana_dashboard: "1"` and
+# loads each data key's JSON into Grafana. `configMapGenerator` below
+# turns every *.json file in this directory into one such ConfigMap.
+#
+# ArgoCD renders this directory with Kustomize because a
+# kustomization.yaml is present; the kube-prometheus-stack Application
+# lists it as a fourth source. The sibling manifests/ directory stays a
+# plain (non-Kustomize) manifest directory — only this dashboards/ tree
+# is Kustomize-built.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: observability
+
+generatorOptions:
+  # Stable ConfigMap name — no content-hash suffix — so the sidecar
+  # tracks one ConfigMap per dashboard and updates it in place when the
+  # JSON changes, rather than orphaning a hash-suffixed copy.
+  disableNameSuffixHash: true
+  labels:
+    # The label the Grafana sidecar selects on
+    # (helm-values.yaml: `grafana.sidecar.dashboards.label{,Value}`).
+    grafana_dashboard: "1"
+  annotations:
+    # Provenance for cilium.json (issue #179): the canonical
+    # Cilium/Hubble dashboard, taken from the cilium/cilium v1.16.5 tag
+    # so it matches the deployed Cilium chart (var.cilium_chart_version).
+    homelab.jackhall.dev/dashboard-source: >-
+      cilium/cilium v1.16.5
+      install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json
+
+configMapGenerator:
+  - name: grafana-dashboard-cilium
+    files:
+      - cilium.json

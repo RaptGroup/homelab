@@ -12,6 +12,10 @@
 #     observability Namespace (with the PodSecurity label), the Grafana
 #     HTTPRoute, and the ExternalSecret for the admin password. Argo
 #     applies these directly without templating.
+#   - Source 4: the dashboards/ directory in this repo. It carries a
+#     kustomization.yaml, so Argo Kustomize-builds it — `configMapGenerator`
+#     wraps each dashboard JSON in a `grafana_dashboard`-labelled ConfigMap
+#     the Grafana sidecar provisions on boot.
 #
 # Default sync wave: this Application has no hard ordering against the
 # other observability slices (ADR-0007 explicitly says "all three default
@@ -44,6 +48,9 @@ spec:
     - repoURL: git@github.com:RaptGroup/homelab.git
       targetRevision: main
       path: kubernetes/apps/kube-prometheus-stack/manifests
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/kube-prometheus-stack/dashboards
   syncPolicy:
     automated:
       prune: true
