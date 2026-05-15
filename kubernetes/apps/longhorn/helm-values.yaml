@@ -59,13 +59,24 @@ persistence:
   # manifests/recurring-jobs.yaml. Selecting by name (not group) keeps
   # the binding explicit — adding a new RecurringJob to the cluster
   # doesn't auto-attach to longhorn volumes unless it's named here too.
+  #
+  # CHART-RENDERING TRAP: `jobList` MUST be a pre-stringified JSON
+  # array, not a YAML list of maps. The Longhorn chart's
+  # templates/storageclass.yaml renders the value with Helm's default
+  # stringifier, which on a list-of-maps produces Go's
+  # `fmt.Sprintf("%v", ...)` repr — e.g.
+  # `[map[isGroup:false name:snapshot-daily] …]` — and the CSI
+  # provisioner then rejects every PVC against this StorageClass with
+  #   `invalid json format of recurringJobSelector: invalid character
+  #    'm' looking for beginning of value`
+  # The bug is latent until something actually requests a `longhorn`
+  # PVC; the original value here was the list-of-maps form and went
+  # un-noticed until the first observability PVC tripped it (#178
+  # fix-up). Keep this as a JSON string until the chart fixes the
+  # rendering upstream.
   recurringJobSelector:
     enable: true
-    jobList:
-      - name: snapshot-daily
-        isGroup: false
-      - name: backup-weekly
-        isGroup: false
+    jobList: '[{"name":"snapshot-daily","isGroup":false},{"name":"backup-weekly","isGroup":false}]'
 
 defaultSettings:
   # XFS partition carved by talos/patches/nodes/worker-*.yaml's
