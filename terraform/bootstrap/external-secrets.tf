@@ -28,27 +28,42 @@ resource "helm_release" "external_secrets" {
   ]
 }
 
-# Bootstrap SA key for ESO. This is the ONLY K8s Secret Terraform creates
-# directly — every other credential flows through ESO from GSM.
-resource "google_service_account_key" "eso" {
-  service_account_id = "projects/${local.project_id}/serviceAccounts/${local.eso_sa_email}"
-}
-
-resource "kubernetes_secret" "eso_gcp_sa" {
+# Workload-identity principal for the gsm ClusterSecretStore (ADR-0007).
+# ESO mints a projected token for this ServiceAccount with `aud` set to
+# the cluster WIF provider's full resource name, POSTs it to GCP STS to
+# get a federated access token, then impersonates the `external-secrets`
+# GCP SA (authorized by the workloadIdentityUser binding in
+# terraform/gcp/main.tf → `eso_wif_user`) to read GSM.
+#
+# The `iam.gke.io/gcp-service-account` annotation is the well-known
+# convention ESO's workloadIdentityFederation reader uses on
+# external-secrets-chart v2.4.1 to decide which GCP SA to impersonate
+# after the STS exchange (the inline `gcpServiceAccountEmail` field was
+# added upstream on 2026-05-13 and is not yet in v2.4.1; revisit on the
+# next ESO bump and collapse this annotation into the CSS auth block).
+# Parallel to kubernetes/apps/ar-canary/manifests/serviceaccount.yaml,
+# which exercises the same shape for the AR-pull path.
+#
+# Terraform no longer creates any K8s Secret directly — ESO authenticates
+# via WIF, every other credential flows through ESO from GSM.
+resource "kubernetes_service_account" "eso_gsm" {
   metadata {
-    name      = "gcp-sm-credentials"
+    name      = "external-secrets-gsm"
     namespace = kubernetes_namespace.external_secrets.metadata[0].name
+    annotations = {
+      "iam.gke.io/gcp-service-account" = local.eso_sa_email
+    }
   }
 
-  data = {
-    "credentials.json" = base64decode(google_service_account_key.eso.private_key)
-  }
-
-  type = "Opaque"
+  depends_on = [
+    helm_release.external_secrets,
+  ]
 }
 
 # Cluster-wide GSM backend. Every ExternalSecret in the cluster references
 # this store by name (`gsm`). Project ID is read from terraform/gcp state.
+# Auth uses workloadIdentityFederation against the cluster's own OIDC
+# issuer (ADR-0007) — no JSON key anywhere on the bootstrap path.
 resource "kubectl_manifest" "cluster_secret_store_gsm" {
   yaml_body = yamlencode({
     apiVersion = "external-secrets.io/v1"
@@ -61,11 +76,15 @@ resource "kubectl_manifest" "cluster_secret_store_gsm" {
         gcpsm = {
           projectID = local.project_id
           auth = {
-            secretRef = {
-              secretAccessKeySecretRef = {
-                name      = kubernetes_secret.eso_gcp_sa.metadata[0].name
-                namespace = kubernetes_secret.eso_gcp_sa.metadata[0].namespace
-                key       = "credentials.json"
+            workloadIdentityFederation = {
+              # The STS exchange's `audience` parameter and the projected
+              # token's `aud` claim must both equal the WIF provider's
+              # full resource name — GCP STS rejects the exchange otherwise.
+              audience = local.cluster_wif_audience
+              serviceAccountRef = {
+                name      = kubernetes_service_account.eso_gsm.metadata[0].name
+                namespace = kubernetes_service_account.eso_gsm.metadata[0].namespace
+                audiences = [local.cluster_wif_audience]
               }
             }
           }
@@ -79,6 +98,6 @@ resource "kubectl_manifest" "cluster_secret_store_gsm" {
 
   depends_on = [
     helm_release.external_secrets,
-    kubernetes_secret.eso_gcp_sa,
+    kubernetes_service_account.eso_gsm,
   ]
 }

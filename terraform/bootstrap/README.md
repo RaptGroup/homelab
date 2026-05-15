@@ -148,12 +148,17 @@ The most common cause is NS delegation not yet propagated.
 **External Secrets Operator (step 4).** If ESO comes up but the
 `ClusterSecretStore gsm` shows `Ready=False`, the most common causes
 are: the OIDC discovery document or JWKS isn't reachable at the
-public issuer URL (re-run the upload from #139's recipe; verify with
-`curl https://oidc.lab.jackhall.dev/.well-known/openid-configuration`);
-the WIF binding on `external-secrets@…` doesn't trust the K8s SA
-principal (check `terraform/gcp/` plan); or the GCP SA lacks
-`roles/secretmanager.secretAccessor` (verify in `terraform/gcp/`).
-See [ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)
+public issuer URL (re-run the upload from #139's recipe; the issuer
+URL is `tofu -chdir=../gcp output -raw cluster_oidc_issuer`, verify
+with `curl "$(tofu -chdir=../gcp output -raw cluster_oidc_issuer)/.well-known/openid-configuration"`
+and `…/openid/v1/jwks`); the WIF binding on `external-secrets@…`
+doesn't trust the `system:serviceaccount:external-secrets:external-secrets-gsm`
+principal (check `terraform/gcp/` plan for `eso_wif_user`); or the GCP
+SA lacks `roles/secretmanager.secretAccessor` (verify in
+`terraform/gcp/`). `kubectl -n external-secrets describe
+clustersecretstore gsm` surfaces the underlying GCP STS error verbatim
+in the `Status.Conditions[Ready].Message` field. See
+[ADR-0007](../../docs/adr/0007-eso-bootstrap-auth-via-cluster-wif.md)
 for the auth shape.
 
 **local-path-provisioner (step 5).** Inspect:
