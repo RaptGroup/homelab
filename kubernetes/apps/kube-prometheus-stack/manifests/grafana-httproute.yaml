@@ -12,15 +12,28 @@
 # attachment to gateway-system, so no per-route grant is needed
 # there either.
 #
-# No `gethomepage.dev/*` annotations on this slice. The Homepage
-# auto-discovery wiring for the observability surface lands with
-# the Loki + Alloy slices once the stack as a whole is demoable —
-# adding the card now points it at half a stack.
+# Carries the gethomepage.dev/* annotations Homepage (#26) discovers
+# via `kubernetes.gateway: true` — Grafana lands as a card under the
+# `Observability` row already declared in homepage/helm-values.yaml.
+# No `gethomepage.dev/app` status-discovery override: the route is
+# named `grafana` and the grafana sub-chart renders its StatefulSet
+# pod with `app.kubernetes.io/name: grafana`, so Homepage's default
+# pod lookup matches (unlike the AdGuard route — see that file for
+# the trap). No widget block either: the Grafana widget needs
+# username/password or an API key, which anonymous-viewer auth does
+# not supply — a separate ergonomic ticket if it's wanted.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: grafana
   namespace: observability
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Grafana
+    gethomepage.dev/description: Metrics + logs dashboards
+    gethomepage.dev/group: Observability
+    gethomepage.dev/icon: grafana.svg
+    gethomepage.dev/href: https://grafana.lab.jackhall.dev
 spec:
   # Spell out the Gateway API admission-webhook defaults (parentRef
   # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
