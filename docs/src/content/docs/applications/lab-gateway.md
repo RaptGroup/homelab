@@ -140,6 +140,51 @@ backend Service in foo's namespace
 Two LB IPs, one cert, one Gateway. Adding addon #9 doesn't change the
 left or middle column — it adds one more leaf at the right.
 
+## Recovering a wedged data path
+
+The Gateway has one operational failure mode where the obvious next
+step doesn't fix it.
+
+**Symptom.** Every `*.lab.jackhall.dev` host times out at once —
+`dashboard`, `argocd`, `hubble`, `longhorn`, AdGuard's admin UI — while
+AdGuard's DNS at `192.168.1.200:53` still resolves. TCP to
+`192.168.1.201:443` and to the LB's NodePort on the announcing worker
+both time out (silent drop); other host ports on the same worker give a
+clean RST, so the node itself is alive. The `Gateway`'s `status` still
+says `Programmed: True`, attached `HTTPRoute`s still resolve their
+refs, and the backend pods are Ready. Nothing in `kubectl` looks wrong.
+The control plane is fine; the data plane has wedged on the
+L2-announcing worker.
+
+**Identify which worker.** The `lab-l2-workers`
+`CiliumL2AnnouncementPolicy` parks the VIP on one worker at a time via
+a lease. Find the current holder by ARP from any LAN host:
+
+```
+arp -n 192.168.1.201
+```
+
+The MAC matches that worker's NIC IP — `192.168.1.241` is `worker-01`,
+`.242` is `worker-02`, `.243` is `worker-03`.
+
+**Fix.** Delete the `cilium-envoy` pod on that one worker:
+
+```
+kubectl -n kube-system delete pod \
+  -l k8s-app=cilium-envoy \
+  --field-selector spec.nodeName=worker-01
+```
+
+The DaemonSet recreates it in ~30s; the listener rebinds; every
+`*.lab.jackhall.dev` host comes back.
+
+**Don't restart `cilium-agent` first.** It's the obvious instinct and a
+waste of a cycle. The agent reconnects xDS cleanly — the logs will
+show `Listener`, `RouteConfiguration`, and `Secret` versions re-ack'd
+— but doesn't bounce the envoy process. Whatever stale state was
+holding envoy's listener wedged survives the agent restart untouched.
+Only restarting `cilium-envoy` itself rebuilds the bound sockets.
+
 ## More
 
 The repo-side README at
