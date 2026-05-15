@@ -388,6 +388,42 @@ resource "google_secret_manager_secret" "arc_installation_id_brazostech" {
   depends_on = [google_project_service.enabled]
 }
 
+# Grafana admin password for the kube-prometheus-stack Application
+# (kubernetes/apps/kube-prometheus-stack/). Container only — the JSON
+# payload `{"admin-user":"admin","admin-password":"<password>"}` is
+# uploaded out of band by the operator, same pattern as
+# `adguard-home-admin` above. ADR-0007 Q5: anonymous viewers see
+# dashboards; editing requires this admin password. ESO syncs the
+# container into K8s Secret `observability/grafana-admin` via the
+# `grafana-admin` ExternalSecret in this slice's manifests/.
+#
+# Upload (after `tofu apply` here):
+#
+#   echo -n '{"admin-user":"admin","admin-password":"<password>"}' \
+#     | gcloud secrets versions add grafana-admin-password \
+#         --project rockingham-homelab --data-file=-
+#
+# Rotation: re-upload a new version with the same command; ESO's
+# next refresh (1h) propagates it. Grafana picks up the new
+# credential on its next pod restart — kick with
+# `kubectl -n observability rollout restart deploy kube-prometheus-stack-grafana`
+# if the rotation has to take effect immediately.
+resource "google_secret_manager_secret" "grafana_admin_password" {
+  project   = google_project.lab.project_id
+  secret_id = "grafana-admin-password"
+
+  labels = {
+    purpose = "addon-credential"
+    addon   = "kube-prometheus-stack"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on

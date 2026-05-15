@@ -1,0 +1,32 @@
+# The `observability` namespace is the shared home for all three
+# Argo Applications in the ADR-0007 stack — kube-prometheus-stack
+# (this slice), loki, and alloy (later slices). It is declared here,
+# in the first slice to land, so the later two Applications can
+# attach to an existing namespace without owning a duplicate
+# manifest.
+#
+# Pod Security Admission is set to `restricted` — every workload in
+# this stack (Prometheus, Grafana, Alertmanager, node-exporter,
+# kube-state-metrics, and later Loki) ships upstream with a
+# restricted-friendly securityContext. node-exporter is the closest
+# to the line (it reads /proc, /sys, /, host network) but the
+# kube-prometheus-stack chart's node-exporter sub-chart configures
+# the relevant `allowedHostPaths` + `runAsNonRoot` to stay inside
+# the restricted profile. Alloy's privileged log-tailing lands in
+# its own slice (kubernetes/apps/alloy/manifests/namespace.yaml is
+# not what's used — Alloy attaches here), at which point this
+# label will need to be revisited; the choice today is the
+# stricter one, deliberately.
+#
+# `warn` and `audit` set alongside `enforce` so any future workload
+# that lands in this namespace requesting elevated privilege
+# surfaces in audit logs rather than silently downgrading the
+# enforcement.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
