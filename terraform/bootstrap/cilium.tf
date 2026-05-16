@@ -233,8 +233,11 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
 #
 # Mitigation, not cure: a brief (~1-2 min) degraded window remains
 # during the apply itself, and the underlying proxy-port instability is
-# tied to running Cilium 1.16 on Kubernetes 1.36 (an unsupported
-# pairing). The cure is the Cilium upgrade tracked in #196.
+# tied to running Cilium on a Kubernetes minor (1.36) ahead of every
+# released Cilium release's e2e-tested matrix. #196 walks Cilium up one
+# minor at a time toward 1.19.x (this is hop 1: 1.16 → 1.17). Keep this
+# resource until that staged upgrade lands and a cilium-agent restart is
+# shown not to desync the L7 proxy ports.
 resource "terraform_data" "cilium_envoy_resync" {
   # Bumps on every helm upgrade of the Cilium release.
   triggers_replace = [helm_release.cilium.metadata[0].revision]
