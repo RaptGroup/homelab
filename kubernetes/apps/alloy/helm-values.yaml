@@ -37,6 +37,16 @@ controller:
 # config uses no Go-template syntax — `$1` below is River relabel
 # capture-group syntax, not a template variable.
 alloy:
+  # otelcol.exporter.debug — the OTLP receiver's drop-sink in the
+  # config below — is an experimental-stability component. The chart
+  # defaults stabilityLevel to "generally-available", at which Alloy
+  # refuses to load the config and CrashLoops. Lower the bar to
+  # "experimental". Every other component in the config is GA; this
+  # only unlocks the debug sink. ADR-0007 Phase 3 replaces that sink
+  # with the (GA) OTLP/Tempo exporter — at which point this can go
+  # back to "generally-available".
+  stabilityLevel: experimental
+
   # Tail container log files off the host. `mounts.varlog` bind-
   # mounts the node's /var/log (read-only) into the Alloy pod; the
   # kubelet writes CRI log files under /var/log/pods there. This is
