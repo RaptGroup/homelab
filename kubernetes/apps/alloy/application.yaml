@@ -1,0 +1,57 @@
+# Grafana Alloy — the log shipper of the ADR-0007 self-hosted
+# observability stack. Last collection slice (#176, tracer-bullet
+# #5): Alloy runs as a DaemonSet, tails every pod's logs on every
+# node, and writes them to Loki. After this slice the zero-row
+# LogQL state the Loki slice (#176, #4) shipped with becomes a
+# populated one — `{namespace="argocd"}` returns lines.
+#
+# Alloy's OTLP receivers (gRPC 4317, HTTP 4318) come up on day one
+# but are unrouted: they accept OTLP and drop it. ADR-0007 Phase 3
+# wires Tempo in as the traces consumer — see helm-values.yaml.
+#
+# Multi-source layout (mirrors kubernetes/apps/loki/):
+#   - Source 1: grafana/alloy from the upstream Helm repo.
+#   - Source 2: $values ref into this repo, so helm-values.yaml
+#     lives in Git alongside the Application.
+#
+# No manifests/ directory: the `observability` Namespace is owned by
+# the kube-prometheus-stack Application (ADR-0007 — the namespace is
+# declared once there so Loki and Alloy attach without owning their
+# own Namespace manifest). Alloy is ClusterIP-only — Grafana is the
+# stack's only externally routed surface — so there is no HTTPRoute.
+#
+# Default sync wave: ADR-0007 puts all observability slices at wave
+# 0 with no hard ordering. Alloy writes to `loki.observability.svc`;
+# until Loki is up those writes retry and fail harmlessly, so no
+# wave dependency is needed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 1.8.1
+      helm:
+        releaseName: alloy
+        valueFiles:
+          - $values/kubernetes/apps/alloy/helm-values.yaml
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
