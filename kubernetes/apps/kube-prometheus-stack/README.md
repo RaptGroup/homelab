@@ -13,9 +13,11 @@ kubernetes/apps/kube-prometheus-stack/
 ├── application.yaml       # multi-source ArgoCD Application (default wave)
 ├── helm-values.yaml       # prometheus-community/kube-prometheus-stack values
 ├── manifests/
-│   ├── namespace.yaml                          # observability Namespace (PSA: restricted)
+│   ├── namespace.yaml                          # observability Namespace (PSA: privileged)
 │   ├── grafana-httproute.yaml                  # grafana.lab.jackhall.dev → Grafana Service
-│   └── external-secret-grafana-admin.yaml      # GSM → K8s Secret with admin user/pass
+│   ├── external-secret-grafana-admin.yaml      # GSM → K8s Secret with admin user/pass
+│   ├── external-secret-discord.yaml            # GSM → Discord webhook Secret (Alertmanager)
+│   └── external-secret-healthchecks.yaml       # GSM → healthchecks.io ping-URL Secret
 └── dashboards/
     ├── kustomization.yaml                      # configMapGenerator → grafana_dashboard ConfigMaps
     ├── cilium.json                             # Cilium/Hubble dashboard (vendored)
@@ -36,6 +38,9 @@ kubernetes/apps/kube-prometheus-stack/
   behind the admin login.
 - Wide-open `ServiceMonitor` / `PodMonitor` / `PrometheusRule` / `Probe`
   discovery across every namespace — the ADR-0007 developer contract.
+- Alertmanager routing the default route to a Discord channel webhook
+  and the always-firing `Watchdog` alert to a healthchecks.io ping URL
+  — the dead-man's switch (added in #181; see "Alertmanager alerting").
 
 ## What this slice does NOT deliver
 
@@ -43,9 +48,6 @@ kubernetes/apps/kube-prometheus-stack/
   (#176, tracer-bullet #4). The Prometheus datasource is provisioned
   here; Loki is intentionally deferred.
 - **Pod log auto-collection.** Alloy slice (#176, tracer-bullet #5).
-- **Alertmanager Discord receiver + Watchdog → healthchecks.io.**
-  Alerting slice (#176, tracer-bullet #6). This slice keeps
-  Alertmanager up but routes nothing externally.
 - **`prometheus.lab.jackhall.dev` or `alertmanager.lab.jackhall.dev`
   HTTPRoutes.** Per ADR-0007 (Q15), Grafana is the only externally-routed
   surface. The raw Prometheus and Alertmanager UIs are reachable by
@@ -215,6 +217,86 @@ refresh (1h) propagates it. Grafana picks the new credential up on
 its next pod restart — kick with `kubectl -n observability rollout
 restart deploy kube-prometheus-stack-grafana` to apply immediately.
 
+## Alertmanager alerting
+
+Alertmanager routes alerts down two paths (`helm-values.yaml` →
+`alertmanager.config`), neither of which carries its endpoint URL in
+Git — both source the URL from a file mounted out of an ESO-synced
+Secret:
+
+| Route                    | Receiver   | Endpoint                          | Purpose |
+|--------------------------|------------|-----------------------------------|---------|
+| default (every alert)    | `discord`  | Discord channel webhook           | Actionable alerts reach the operator's phone |
+| `alertname = "Watchdog"` | `watchdog` | healthchecks.io ping URL          | Dead-man's switch — see below |
+| `alertname = "InfoInhibitor"` | `blackhole` | — (empty receiver)           | The chart's non-actionable inhibition helper; dropped so it doesn't spam Discord |
+
+The **Watchdog** alert is shipped always-firing by the chart. Routing
+it to healthchecks.io on a 1-minute `repeat_interval` inverts the
+signal: healthchecks.io pages when the pings *stop*. That survives a
+failure mode no cluster-internal alert can — a dead Prometheus, dead
+Alertmanager, dead node, or dead ISP all silence the pings, and
+healthchecks.io notices on its own schedule. The only knob to tune is
+the healthchecks.io check's grace period.
+
+### Credential pipeline
+
+```
+GSM `discord-alertmanager-webhook`            GSM `healthchecks-watchdog-url`
+   │  (plain string: the webhook URL)            │  (plain string: the ping URL)
+   ▼  ExternalSecret                             ▼  ExternalSecret
+K8s Secret observability/discord-…            K8s Secret observability/healthchecks-…
+   key: webhook-url                              key: url
+   │                                             │
+   └──────────────┬──────────────────────────────┘
+                  ▼  alertmanagerSpec.secrets mounts both at
+                     /etc/alertmanager/secrets/<secret-name>/<key>
+   alertmanager.config receivers reference them via
+     discord  → webhook_url_file: …/discord-alertmanager-webhook/webhook-url
+     watchdog → url_file:         …/healthchecks-watchdog-url/url
+```
+
+Both GSM containers are declared (empty) in `terraform/gcp/`. Until
+the operator uploads a value, the matching `ExternalSecret` reports
+`SecretSyncedError`, the K8s Secret is not created, and the
+Alertmanager pod stays `Pending` on the missing secret volume — Argo
+reports the app `Degraded` rather than silently masking the gap. Same
+fail-loud shape as the Grafana admin credential.
+
+### Out-of-band operator steps
+
+These run once, after a `tofu apply` of `terraform/gcp/` has created
+the two GSM containers. None of them touch Git or Terraform state.
+
+1. **Discord webhook.** In the Discord server, create (or pick) a
+   channel for cluster alerts. *Channel → Edit Channel → Integrations
+   → Webhooks → New Webhook*; copy its URL. Upload it:
+   ```
+   echo -n '<discord-webhook-url>' \
+     | gcloud secrets versions add discord-alertmanager-webhook \
+         --project rockingham-homelab --data-file=-
+   ```
+2. **healthchecks.io check.** Create a free account at
+   healthchecks.io, add a check, set its **period to 1 minute** and a
+   **grace period** long enough to absorb a brief Alertmanager restart
+   (2–3 minutes is reasonable). Copy the check's ping URL:
+   ```
+   echo -n '<healthchecks-ping-url>' \
+     | gcloud secrets versions add healthchecks-watchdog-url \
+         --project rockingham-homelab --data-file=-
+   ```
+3. Within one ESO refresh interval (1h — force it sooner with
+   `kubectl -n observability annotate externalsecret discord-alertmanager-webhook force-sync=$(date +%s) --overwrite`
+   and the same for `healthchecks-watchdog-url`) both K8s Secrets
+   appear and the Alertmanager pod schedules. The Watchdog ping lands
+   within a minute; the healthchecks.io check flips to **Up**.
+
+### Rotation
+
+Re-upload a new version of either container with the same
+`gcloud secrets versions add` command. ESO propagates it on its next
+refresh; the Prometheus Operator's config-reloader picks the new file
+up without an Alertmanager restart.
+
 ## Smoke test
 
 The acceptance criterion for this slice is "anyone on the LAN can hit
@@ -295,6 +377,23 @@ as admin to edit." The procedure:
    Grafana UI; signed in as admin, save a throwaway dashboard into it.
    It is editable (unlike the read-only Homelab folder) and is not
    tracked in Git — see "Folder convention" above.
+12. **Discord receiver.** After the operator has populated the two GSM
+    containers and ESO has synced both Secrets, fire a test alert and
+    confirm it lands in the Discord channel within seconds:
+    ```
+    kubectl -n observability port-forward svc/kube-prometheus-stack-alertmanager 9093:9093 &
+    amtool alert add smoke severity=warning \
+      --alertmanager.url=http://localhost:9093 \
+      --annotation=summary="kube-prometheus-stack smoke test"
+    ```
+    (No `amtool`? `curl` the v2 API:
+    `curl -XPOST http://localhost:9093/api/v2/alerts -H 'Content-Type: application/json' -d '[{"labels":{"alertname":"smoke","severity":"warning"}}]'`.)
+13. **Watchdog dead-man's switch.** The healthchecks.io check shows
+    **Up** after the first minute-tick following sync. To prove the
+    switch survives loss of Prometheus, delete the Prometheus pod
+    (`kubectl -n observability delete pod prometheus-kube-prometheus-stack-prometheus-0`)
+    and confirm the check flips to **Down** once its grace period
+    elapses, then back to **Up** after the pod returns.
 
 If any step fails, `kubectl -n observability get pods` + the
 `kube-prometheus-stack-operator` pod's logs are the first places to
@@ -304,11 +403,11 @@ the lint script catches the LB-pin variant, not these).
 
 ## What's NOT here
 
-- **The rest of the ADR-0007 stack.** The Alertmanager Discord +
-  healthchecks.io receivers and the developer-facing onboarding doc
-  ship as their own slices — see the issue list under #176. The Cilium
-  values bump that feeds the Cilium dashboard shipped in #179
-  (`terraform/bootstrap/cilium.tf`).
+- **The rest of the ADR-0007 stack.** The developer-facing onboarding
+  doc ships as its own slice — see the issue list under #176. The
+  Alertmanager Discord + healthchecks.io receivers landed in #181 (see
+  "Alertmanager alerting" above). The Cilium values bump that feeds the
+  Cilium dashboard shipped in #179 (`terraform/bootstrap/cilium.tf`).
 - **A full per-addon dashboard library.** `dashboards/` ships the
   node-level and addon-health overviews plus the vendored Cilium
   dashboard; bespoke per-addon dashboards (ArgoCD, cert-manager, ESO,
