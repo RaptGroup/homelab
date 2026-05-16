@@ -18,7 +18,9 @@ kubernetes/apps/kube-prometheus-stack/
 │   └── external-secret-grafana-admin.yaml      # GSM → K8s Secret with admin user/pass
 └── dashboards/
     ├── kustomization.yaml                      # configMapGenerator → grafana_dashboard ConfigMaps
-    └── cilium.json                             # Cilium/Hubble dashboard (see "Cilium dashboard")
+    ├── cilium.json                             # Cilium/Hubble dashboard (vendored)
+    ├── nodes.json                              # 6-node CPU/mem/disk/network overview
+    └── addon-health.json                       # cluster + addon health at a glance
 ```
 
 ## What this slice delivers
@@ -44,11 +46,6 @@ kubernetes/apps/kube-prometheus-stack/
 - **Alertmanager Discord receiver + Watchdog → healthchecks.io.**
   Alerting slice (#176, tracer-bullet #6). This slice keeps
   Alertmanager up but routes nothing externally.
-- **The repo-owned dashboards-as-code workflow.** The Scratch-folder
-  promotion convention is the dashboards-as-code slice (#176,
-  tracer-bullet #7). `dashboards/cilium.json` (added in #179) is the
-  first repo-owned dashboard and establishes the `configMapGenerator`
-  mechanism that slice builds on.
 - **`prometheus.lab.jackhall.dev` or `alertmanager.lab.jackhall.dev`
   HTTPRoutes.** Per ADR-0007 (Q15), Grafana is the only externally-routed
   surface. The raw Prometheus and Alertmanager UIs are reachable by
@@ -79,35 +76,89 @@ it. The ADR-0007 developer contract ("drop a `ServiceMonitor` next to
 your Service, no namespace labelling, it just works") fails if any of
 these six knobs reverts.
 
-## Cilium dashboard
+## Dashboards-as-code
 
 `dashboards/` holds repo-owned Grafana dashboard JSON. Its
 `kustomization.yaml` runs a `configMapGenerator` that wraps every
-`*.json` file into a ConfigMap labelled `grafana_dashboard: "1"` — the
-label the Grafana sidecar (`grafana.sidecar.dashboards` in
+`*.json` file into one ConfigMap labelled `grafana_dashboard: "1"` —
+the label the Grafana sidecar (`grafana.sidecar.dashboards` in
 `helm-values.yaml`) selects on to provision dashboards on boot. The
 directory is wired as a fourth ArgoCD source on `application.yaml`.
+`disableNameSuffixHash: true` keeps each ConfigMap's name stable, so
+editing a dashboard's JSON updates the existing ConfigMap in place and
+the sidecar reloads it — no orphaned hash-suffixed copy.
 
-`cilium.json` is the canonical Cilium/Hubble dashboard ("Hubble
-Metrics and Monitoring", Grafana uid `5HftnJAWz`). It is copied from
-the `cilium/cilium` **v1.16.5** tag
-(`install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json`)
+Three dashboards ship today:
+
+| File                | Source                 | Notes                                                            |
+|---------------------|------------------------|------------------------------------------------------------------|
+| `cilium.json`       | Vendored (#179)        | "Hubble Metrics and Monitoring" — needs the #179 Hubble scrape    |
+| `nodes.json`        | Repo-authored (#182)   | CPU/mem/disk/network across all 6 nodes; story 2                  |
+| `addon-health.json` | Repo-authored (#182)   | Cluster + addon health at a glance; story 1                       |
+
+`nodes.json` and `addon-health.json` are hand-authored against the
+metrics kube-prometheus-stack ships out of the box (node-exporter,
+kube-state-metrics) and have data from first sync. `addon-health.json`
+also carries an "Addon exporters" row (ArgoCD, cert-manager, ESO,
+Longhorn) that reads "No data" until each addon ships its own
+`ServiceMonitor` — wide-open discovery scrapes it the moment it does.
+
+`cilium.json` is vendored: copied from the `cilium/cilium` **v1.16.5**
+tag (`install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json`)
 so it matches the deployed Cilium chart (`var.cilium_chart_version`)
-rather than the stale grafana.com publication of the same dashboard
-family (grafana.com ID `16613`, "Cilium v1.12 Hubble Metrics"). Two
-edits adapt it for sidecar (file-based) provisioning: the `__inputs`
-import-wizard block is removed so the `${DS_PROMETHEUS}` datasource
-resolves against the provisioned Prometheus datasource, and the
-top-level `id` is nulled so Grafana assigns one. Provenance is also
-recorded as an annotation on the generated ConfigMap.
+rather than the stale grafana.com publication (ID `16613`). Two edits
+adapt a vendored dashboard for sidecar (file-based) provisioning: the
+`__inputs` import-wizard block is removed so its `${DS_PROMETHEUS}`
+datasource resolves against the provisioned Prometheus datasource, and
+the top-level `id` is nulled so Grafana assigns one. **It needs Hubble
+metrics scraping to populate** — its `hubble_*` / `cilium_*` panels
+read "No data" until the `terraform/bootstrap/cilium.tf` scrape values
+(#179, ADR-0002/0007) are applied. Each dashboard's provenance is
+recorded as an annotation (`homelab.jackhall.dev/dashboard-source`) on
+its generated ConfigMap, set per-entry in `dashboards/kustomization.yaml`.
 
-**The Cilium dashboard requires Hubble metrics scraping to populate** —
-its panels read `hubble_*` / `cilium_*` series that exist only once
-Cilium exports them. That scraping is turned on by the `hubble.metrics`
-and `prometheus` values in `terraform/bootstrap/cilium.tf` (issue
-#179, a bootstrap-time change per ADR-0002/0007). Until that `tofu
-apply` lands, the dashboard still provisions but every panel reads "No
-data".
+### Folder convention: "Homelab" vs "Scratch"
+
+Grafana shows two folders for this stack's non-bundled dashboards:
+
+- **Homelab** — repo-owned, the dashboards under `dashboards/`. The
+  provisioning provider runs with `allowUiUpdates: false`, so these are
+  **read-only in the UI**: the JSON in Git is the source of truth.
+- **Scratch** — operator-created in the Grafana UI, **writable**, and
+  intentionally **not in Git**. It is where in-flight investigations
+  live before they are promoted to code or abandoned.
+
+The folder split is driven by the sidecar's `folderAnnotation`
+mechanism, not by dashboard `tags`. `helm-values.yaml` sets
+`sidecar.dashboards.folderAnnotation: grafana_folder` and
+`provider.foldersFromFilesStructure: true`; `dashboards/kustomization.yaml`
+stamps every generated ConfigMap with `grafana_folder: Homelab`. The
+sidecar files those dashboards into a `Homelab/` subdirectory and
+Grafana turns the subdirectory into a real folder. `tags` was the
+alternative — it was rejected because tags label a dashboard but do
+not place it in a folder, so they cannot give Scratch its own
+read/write boundary. Chart-bundled dashboards carry no `grafana_folder`
+annotation and stay in Grafana's "General" folder.
+
+The "Scratch" folder is not provisioned — the dashboard sidecar
+provisions dashboards, not empty folders. Create it once, by hand:
+*Dashboards → New → New folder → name it `Scratch`*. Anyone with an
+editor/admin login can then save throwaway dashboards into it.
+
+### Promoting a Scratch dashboard to code
+
+When a Scratch dashboard is worth keeping:
+
+1. In Grafana, open it → *Dashboard settings → JSON Model*; copy the JSON.
+2. Save it as `dashboards/<name>.json`; set `"id": null` and a unique
+   `"uid"` (e.g. `homelab-<name>`) so Grafana does not collide it.
+3. Add a `configMapGenerator` entry in `dashboards/kustomization.yaml`
+   with a `homelab.jackhall.dev/dashboard-source` provenance annotation.
+4. Open a PR. On merge Argo provisions it into the read-only **Homelab**
+   folder — delete the Scratch copy.
+
+Scratch is ephemeral — treat anything left there as disposable. A
+dashboard only becomes durable by landing in `dashboards/` via PR.
 
 ## Stateful PVCs
 
@@ -224,16 +275,26 @@ as admin to edit." The procedure:
    # alertmanager-…           Bound   …    10Gi   longhorn
    # storage-kube-prometheus-stack-grafana-0   Bound   …    10Gi   longhorn
    ```
-9. **Cilium dashboard provisioned and populated.** The sidecar wraps
-   `dashboards/cilium.json` into the `grafana-dashboard-cilium`
-   ConfigMap; Grafana's *Dashboards* list shows "Hubble Metrics and
-   Monitoring" (tagged `cilium`). After `tofu apply` of
-   `terraform/bootstrap/` (issue #179) has enabled Hubble metrics, the
-   `cilium` and `hubble` ServiceMonitors report `up == 1` in Prometheus
-   *Status → Targets*, and the dashboard's flow panels render non-empty
-   data — flows-per-second > 0 even in a quiet cluster. Before that
-   apply the dashboard still provisions, but every panel reads "No
-   data".
+9. **Repo-owned dashboards provisioned into the Homelab folder.** The
+   sidecar wraps each `dashboards/*.json` into a `grafana-dashboard-*`
+   ConfigMap; Grafana's *Dashboards* list shows a **Homelab** folder
+   holding "Rockingham Nodes", "Addon Health Overview", and "Hubble
+   Metrics and Monitoring". `nodes.json` and `addon-health.json` (its
+   "Cluster & workload health" row) render populated panels on first
+   sync. The Cilium dashboard's `hubble_*` / `cilium_*` panels stay
+   "No data" until the `terraform/bootstrap/cilium.tf` Hubble-scrape
+   values (#179) are applied; the `addon-health.json` "Addon exporters"
+   row likewise fills in per addon as ServiceMonitors land.
+10. **Edit-and-resync updates the dashboard.** Change a panel title in
+   `dashboards/nodes.json`, commit, and let Argo sync; the
+   `grafana-dashboard-nodes` ConfigMap updates in place (stable name,
+   no hash suffix) and the sidecar reloads the dashboard within
+   `updateIntervalSeconds` — verifying the ConfigMap → sidecar reload
+   path.
+11. **Scratch folder is writable.** Create a `Scratch` folder in the
+   Grafana UI; signed in as admin, save a throwaway dashboard into it.
+   It is editable (unlike the read-only Homelab folder) and is not
+   tracked in Git — see "Folder convention" above.
 
 If any step fails, `kubectl -n observability get pods` + the
 `kube-prometheus-stack-operator` pod's logs are the first places to
@@ -243,13 +304,14 @@ the lint script catches the LB-pin variant, not these).
 
 ## What's NOT here
 
-- **The full ADR-0007 stack.** Loki, Alloy, the Discord +
-  healthchecks.io receivers, the dashboards-as-code workflow, and the
-  developer-facing onboarding doc all ship as their own slices — see
-  the issue list under #176. The Cilium values bump that feeds the
-  Cilium dashboard shipped in #179 (`terraform/bootstrap/cilium.tf`).
-- **More dashboards beyond `dashboards/cilium.json`.** The sidecar is
-  wired (label `grafana_dashboard`, search namespace `ALL`) and the
-  `dashboards/` `configMapGenerator` mechanism is in place; further
-  repo-owned dashboards and the Scratch-folder promotion convention
-  land in the dashboards-as-code slice (#176, tracer-bullet #7).
+- **The rest of the ADR-0007 stack.** The Alertmanager Discord +
+  healthchecks.io receivers and the developer-facing onboarding doc
+  ship as their own slices — see the issue list under #176. The Cilium
+  values bump that feeds the Cilium dashboard shipped in #179
+  (`terraform/bootstrap/cilium.tf`).
+- **A full per-addon dashboard library.** `dashboards/` ships the
+  node-level and addon-health overviews plus the vendored Cilium
+  dashboard; bespoke per-addon dashboards (ArgoCD, cert-manager, ESO,
+  Longhorn) ship incrementally with the addons that need them, not in
+  this slice. The `configMapGenerator` mechanism and the
+  Homelab/Scratch folder convention above are what they build on.

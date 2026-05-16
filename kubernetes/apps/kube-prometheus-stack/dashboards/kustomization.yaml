@@ -11,6 +11,17 @@
 # lists it as a fourth source. The sibling manifests/ directory stays a
 # plain (non-Kustomize) manifest directory — only this dashboards/ tree
 # is Kustomize-built.
+#
+# FOLDER CONVENTION (issue #182)
+#
+#   Repo-owned dashboards land in the Grafana folder "Homelab"; the
+#   manually created "Scratch" folder is ephemeral and stays outside
+#   Git. The `grafana_folder` annotation in generatorOptions below is
+#   what the sidecar's `folderAnnotation` reads to place every ConfigMap
+#   here into "Homelab" (helm-values.yaml: `sidecar.dashboards`). A
+#   dashboard reaches this directory — and therefore the "Homelab"
+#   folder — only by being committed; the promote-from-Scratch workflow
+#   is documented in the kube-prometheus-stack README.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -26,14 +37,42 @@ generatorOptions:
     # (helm-values.yaml: `grafana.sidecar.dashboards.label{,Value}`).
     grafana_dashboard: "1"
   annotations:
-    # Provenance for cilium.json (issue #179): the canonical
-    # Cilium/Hubble dashboard, taken from the cilium/cilium v1.16.5 tag
-    # so it matches the deployed Cilium chart (var.cilium_chart_version).
-    homelab.jackhall.dev/dashboard-source: >-
-      cilium/cilium v1.16.5
-      install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json
+    # The sidecar's `folderAnnotation` reads this and files every
+    # dashboard here into the "Homelab" Grafana folder — the
+    # repo-owned, read-only counterpart to the writable "Scratch"
+    # folder. See the FOLDER CONVENTION note above.
+    grafana_folder: Homelab
 
+# One ConfigMap per dashboard. Per-entry `options.annotations` records
+# each dashboard's provenance; the merge with generatorOptions keeps the
+# shared `grafana_folder` annotation and `grafana_dashboard` label on
+# every ConfigMap.
 configMapGenerator:
   - name: grafana-dashboard-cilium
     files:
       - cilium.json
+    options:
+      annotations:
+        homelab.jackhall.dev/dashboard-source: >-
+          Vendored — cilium/cilium v1.16.5
+          install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json
+          (issue #179). Pinned to the deployed Cilium chart version.
+  - name: grafana-dashboard-nodes
+    files:
+      - nodes.json
+    options:
+      annotations:
+        homelab.jackhall.dev/dashboard-source: >-
+          Repo-authored for the rockingham 6-node cluster (issue #182,
+          PRD user story 2). Reads node-exporter + kube-state-metrics
+          series shipped by kube-prometheus-stack.
+  - name: grafana-dashboard-addon-health
+    files:
+      - addon-health.json
+    options:
+      annotations:
+        homelab.jackhall.dev/dashboard-source: >-
+          Repo-authored for the rockingham cluster (issue #182, PRD
+          user story 1). Workload-health row reads kube-state-metrics;
+          addon-exporter row populates as each addon ships a
+          ServiceMonitor.
