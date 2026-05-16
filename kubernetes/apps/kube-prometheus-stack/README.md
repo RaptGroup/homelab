@@ -12,10 +12,13 @@ sibling Applications in later slices (#176, tracer-bullet #4 and #5).
 kubernetes/apps/kube-prometheus-stack/
 ├── application.yaml       # multi-source ArgoCD Application (default wave)
 ├── helm-values.yaml       # prometheus-community/kube-prometheus-stack values
-└── manifests/
-    ├── namespace.yaml                          # observability Namespace (PSA: restricted)
-    ├── grafana-httproute.yaml                  # grafana.lab.jackhall.dev → Grafana Service
-    └── external-secret-grafana-admin.yaml      # GSM → K8s Secret with admin user/pass
+├── manifests/
+│   ├── namespace.yaml                          # observability Namespace (PSA: restricted)
+│   ├── grafana-httproute.yaml                  # grafana.lab.jackhall.dev → Grafana Service
+│   └── external-secret-grafana-admin.yaml      # GSM → K8s Secret with admin user/pass
+└── dashboards/
+    ├── kustomization.yaml                      # configMapGenerator → grafana_dashboard ConfigMaps
+    └── cilium.json                             # Cilium/Hubble dashboard (see "Cilium dashboard")
 ```
 
 ## What this slice delivers
@@ -38,16 +41,14 @@ kubernetes/apps/kube-prometheus-stack/
   (#176, tracer-bullet #4). The Prometheus datasource is provisioned
   here; Loki is intentionally deferred.
 - **Pod log auto-collection.** Alloy slice (#176, tracer-bullet #5).
-- **Cilium + Hubble metric scraping.** Cilium values bump
-  (#176, tracer-bullet #3) is a `terraform/bootstrap/` change, not an
-  Argo change.
 - **Alertmanager Discord receiver + Watchdog → healthchecks.io.**
   Alerting slice (#176, tracer-bullet #6). This slice keeps
   Alertmanager up but routes nothing externally.
-- **Repo-owned dashboard JSON files.** Dashboards-as-code slice
-  (#176, tracer-bullet #7). The sidecar is wired (label
-  `grafana_dashboard`), so dashboards land as ConfigMaps in a later
-  slice without revisiting this one.
+- **The repo-owned dashboards-as-code workflow.** The Scratch-folder
+  promotion convention is the dashboards-as-code slice (#176,
+  tracer-bullet #7). `dashboards/cilium.json` (added in #179) is the
+  first repo-owned dashboard and establishes the `configMapGenerator`
+  mechanism that slice builds on.
 - **`prometheus.lab.jackhall.dev` or `alertmanager.lab.jackhall.dev`
   HTTPRoutes.** Per ADR-0007 (Q15), Grafana is the only externally-routed
   surface. The raw Prometheus and Alertmanager UIs are reachable by
@@ -77,6 +78,36 @@ naming the trap so a future chart-version bump can't silently regress
 it. The ADR-0007 developer contract ("drop a `ServiceMonitor` next to
 your Service, no namespace labelling, it just works") fails if any of
 these six knobs reverts.
+
+## Cilium dashboard
+
+`dashboards/` holds repo-owned Grafana dashboard JSON. Its
+`kustomization.yaml` runs a `configMapGenerator` that wraps every
+`*.json` file into a ConfigMap labelled `grafana_dashboard: "1"` — the
+label the Grafana sidecar (`grafana.sidecar.dashboards` in
+`helm-values.yaml`) selects on to provision dashboards on boot. The
+directory is wired as a fourth ArgoCD source on `application.yaml`.
+
+`cilium.json` is the canonical Cilium/Hubble dashboard ("Hubble
+Metrics and Monitoring", Grafana uid `5HftnJAWz`). It is copied from
+the `cilium/cilium` **v1.16.5** tag
+(`install/kubernetes/cilium/files/hubble/dashboards/hubble-dashboard.json`)
+so it matches the deployed Cilium chart (`var.cilium_chart_version`)
+rather than the stale grafana.com publication of the same dashboard
+family (grafana.com ID `16613`, "Cilium v1.12 Hubble Metrics"). Two
+edits adapt it for sidecar (file-based) provisioning: the `__inputs`
+import-wizard block is removed so the `${DS_PROMETHEUS}` datasource
+resolves against the provisioned Prometheus datasource, and the
+top-level `id` is nulled so Grafana assigns one. Provenance is also
+recorded as an annotation on the generated ConfigMap.
+
+**The Cilium dashboard requires Hubble metrics scraping to populate** —
+its panels read `hubble_*` / `cilium_*` series that exist only once
+Cilium exports them. That scraping is turned on by the `hubble.metrics`
+and `prometheus` values in `terraform/bootstrap/cilium.tf` (issue
+#179, a bootstrap-time change per ADR-0002/0007). Until that `tofu
+apply` lands, the dashboard still provisions but every panel reads "No
+data".
 
 ## Stateful PVCs
 
@@ -193,6 +224,16 @@ as admin to edit." The procedure:
    # alertmanager-…           Bound   …    10Gi   longhorn
    # storage-kube-prometheus-stack-grafana-0   Bound   …    10Gi   longhorn
    ```
+9. **Cilium dashboard provisioned and populated.** The sidecar wraps
+   `dashboards/cilium.json` into the `grafana-dashboard-cilium`
+   ConfigMap; Grafana's *Dashboards* list shows "Hubble Metrics and
+   Monitoring" (tagged `cilium`). After `tofu apply` of
+   `terraform/bootstrap/` (issue #179) has enabled Hubble metrics, the
+   `cilium` and `hubble` ServiceMonitors report `up == 1` in Prometheus
+   *Status → Targets*, and the dashboard's flow panels render non-empty
+   data — flows-per-second > 0 even in a quiet cluster. Before that
+   apply the dashboard still provisions, but every panel reads "No
+   data".
 
 If any step fails, `kubectl -n observability get pods` + the
 `kube-prometheus-stack-operator` pod's logs are the first places to
@@ -202,11 +243,13 @@ the lint script catches the LB-pin variant, not these).
 
 ## What's NOT here
 
-- **The full ADR-0007 stack.** Loki, Alloy, the Cilium values bump,
-  the Discord + healthchecks.io receivers, repo-owned dashboards, and
-  the developer-facing onboarding doc all ship as their own slices —
-  see the issue list under #176.
-- **Custom dashboards.** The sidecar is wired (label
-  `grafana_dashboard`, search namespace `ALL`); dashboards land in
-  `kubernetes/apps/kube-prometheus-stack/dashboards/` as
-  ConfigMap-wrapped JSON in a later slice without touching this one.
+- **The full ADR-0007 stack.** Loki, Alloy, the Discord +
+  healthchecks.io receivers, the dashboards-as-code workflow, and the
+  developer-facing onboarding doc all ship as their own slices — see
+  the issue list under #176. The Cilium values bump that feeds the
+  Cilium dashboard shipped in #179 (`terraform/bootstrap/cilium.tf`).
+- **More dashboards beyond `dashboards/cilium.json`.** The sidecar is
+  wired (label `grafana_dashboard`, search namespace `ALL`) and the
+  `dashboards/` `configMapGenerator` mechanism is in place; further
+  repo-owned dashboards and the Scratch-folder promotion convention
+  land in the dashboards-as-code slice (#176, tracer-bullet #7).
