@@ -30,11 +30,111 @@
 
 alertmanager:
   enabled: true
+
+  # --- Alert routing (ADR-0007, issue #181) --------------------------
+  #
+  # Two delivery paths, each sourcing its endpoint URL from a file
+  # mounted out of an ESO-synced K8s Secret (see alertmanagerSpec.secrets
+  # below) — the URLs never appear in this file or in Git:
+  #
+  #   discord  — the default route. Every actionable alert is grouped by
+  #              namespace and POSTed to a Discord channel webhook, so
+  #              alerts reach the operator's phone.
+  #   watchdog — the chart's always-firing `Watchdog` alert, routed to a
+  #              healthchecks.io ping URL on a 1m repeat_interval: the
+  #              dead-man's switch. healthchecks.io pages when the pings
+  #              STOP, so it survives a fully-dark cluster that a
+  #              cluster-internal alert never could. repeat_interval is
+  #              pinned at 1m so the only retry knob left to tune is the
+  #              healthchecks.io grace period.
+  #
+  # Supplying `config` replaces the chart's default Alertmanager config
+  # wholesale — the `inhibit_rules` below are therefore restated verbatim
+  # from that default, or inhibition silently stops working on the first
+  # apply. `InfoInhibitor` is the chart's non-actionable helper alert for
+  # inhibition; upstream routes it nowhere only because its default
+  # receiver is `null`. Now that the default receiver is `discord`, an
+  # explicit sub-route drops `InfoInhibitor` into the empty `blackhole`
+  # receiver so it does not spam the channel.
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      - source_matchers:
+          - 'severity = critical'
+        target_matchers:
+          - 'severity =~ warning|info'
+        equal:
+          - 'namespace'
+          - 'alertname'
+      - source_matchers:
+          - 'severity = warning'
+        target_matchers:
+          - 'severity = info'
+        equal:
+          - 'namespace'
+          - 'alertname'
+      - source_matchers:
+          - 'alertname = InfoInhibitor'
+        target_matchers:
+          - 'severity = info'
+        equal:
+          - 'namespace'
+    route:
+      group_by: ['namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: discord
+      routes:
+        # Watchdog is always firing. group_wait 0s makes the first ping
+        # immediate on Alertmanager start; repeat_interval 1m lands a
+        # ping every minute for as long as the cluster is alive.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        # InfoInhibitor: helper alert, never actionable — drop it.
+        - receiver: blackhole
+          matchers:
+            - alertname = "InfoInhibitor"
+    receivers:
+      - name: discord
+        discord_configs:
+          # webhook_url_file resolves against the
+          # `discord-alertmanager-webhook` Secret mounted by
+          # alertmanagerSpec.secrets below; ESO syncs that Secret from
+          # the GSM container of the same name.
+          - webhook_url_file: /etc/alertmanager/secrets/discord-alertmanager-webhook/webhook-url
+            send_resolved: true
+      - name: watchdog
+        webhook_configs:
+          # url_file resolves against the `healthchecks-watchdog-url`
+          # Secret mounted by alertmanagerSpec.secrets below; ESO syncs
+          # that Secret from the GSM container of the same name.
+          - url_file: /etc/alertmanager/secrets/healthchecks-watchdog-url/url
+            send_resolved: false
+      # Empty receiver — the explicit blackhole for InfoInhibitor.
+      - name: blackhole
+
   alertmanagerSpec:
     # Alertmanager UI is ClusterIP-only per ADR-0007 ("Prometheus and
     # Alertmanager are ClusterIP-only — raw UIs reachable by kubectl
     # port-forward"); no HTTPRoute, no public surface. Grafana is the
     # only externally-routed surface of this stack.
+
+    # ESO-synced Secrets mounted by the operator at
+    # /etc/alertmanager/secrets/<name>/. The `config` above references
+    # files inside these mounts via `webhook_url_file` / `url_file`.
+    # Until the operator populates the matching GSM containers, ESO does
+    # not create these Secrets and the Alertmanager pod stays `Pending`
+    # on the missing volumes — fail-loud, the same shape as the Grafana
+    # admin credential.
+    secrets:
+      - discord-alertmanager-webhook
+      - healthchecks-watchdog-url
     storage:
       volumeClaimTemplate:
         spec:

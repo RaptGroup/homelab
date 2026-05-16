@@ -424,6 +424,68 @@ resource "google_secret_manager_secret" "grafana_admin_password" {
   depends_on = [google_project_service.enabled]
 }
 
+# Alertmanager notification endpoints for the kube-prometheus-stack
+# Application (kubernetes/apps/kube-prometheus-stack/). Containers only —
+# the values are uploaded out of band by the operator, same pattern as
+# `grafana-admin-password` above, so the URLs (each a bearer secret in
+# its own right) never enter Terraform state or Git. ESO syncs each into
+# its own K8s Secret in `observability` via the ExternalSecrets in this
+# slice's manifests/; `alertmanagerSpec.secrets` mounts them so the
+# Alertmanager config's `webhook_url_file` / `url_file` paths resolve.
+#
+# discord-alertmanager-webhook: the Discord channel webhook URL the
+# default Alertmanager route POSTs actionable alerts to. Mint it on a
+# dedicated alerts channel (Channel → Edit → Integrations → Webhooks).
+#
+# healthchecks-watchdog-url: the healthchecks.io ping URL the chart's
+# always-firing `Watchdog` alert POSTs to every minute — the dead-man's
+# switch. If Prometheus, Alertmanager, the node, or the ISP dies, the
+# pings stop and healthchecks.io pages on its own schedule, surviving a
+# fully-dark cluster. Create a check with period 1m and a short grace
+# window, then copy its ping URL here.
+#
+# Upload (after `tofu apply` here; see kube-prometheus-stack/README.md):
+#
+#   echo -n '<discord-webhook-url>' \
+#     | gcloud secrets versions add discord-alertmanager-webhook \
+#         --project rockingham-homelab --data-file=-
+#   echo -n '<healthchecks-ping-url>' \
+#     | gcloud secrets versions add healthchecks-watchdog-url \
+#         --project rockingham-homelab --data-file=-
+resource "google_secret_manager_secret" "discord_alertmanager_webhook" {
+  project   = google_project.lab.project_id
+  secret_id = "discord-alertmanager-webhook"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "kube-prometheus-stack"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret" "healthchecks_watchdog_url" {
+  project   = google_project.lab.project_id
+  secret_id = "healthchecks-watchdog-url"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "kube-prometheus-stack"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on
