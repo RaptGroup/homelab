@@ -182,16 +182,29 @@ grafana:
 
   # The Grafana sidecar watches ConfigMaps labelled `grafana_dashboard`
   # across all namespaces and provisions their JSON into Grafana on
-  # boot. Repo-owned dashboard JSON files land in a later slice
-  # (kubernetes/apps/kube-prometheus-stack/dashboards/) wrapped in
-  # ConfigMaps by Kustomize; this slice ships the chart-bundled
-  # dashboard library only.
+  # boot. Repo-owned dashboard JSON lives in
+  # kubernetes/apps/kube-prometheus-stack/dashboards/, Kustomize-wrapped
+  # into one ConfigMap per dashboard (issue #182).
+  #
+  # FOLDER CONVENTION (issue #182): `folderAnnotation` names the
+  # ConfigMap annotation the sidecar reads to decide which Grafana
+  # folder a dashboard belongs in; `provider.foldersFromFilesStructure`
+  # turns that into real Grafana folders. The dashboards/ kustomization
+  # stamps every repo-owned ConfigMap with `grafana_folder: Homelab`, so
+  # repo dashboards land in the read-only "Homelab" folder. ConfigMaps
+  # without the annotation (the chart-bundled dashboard library) stay in
+  # "General". The writable "Scratch" folder is created by an admin in
+  # the Grafana UI and is intentionally absent from Git — see the
+  # kube-prometheus-stack README.
   sidecar:
     dashboards:
       enabled: true
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
     # The chart's sidecar.datasources block provisions the Prometheus
     # datasource (default, in-cluster) automatically. The Loki
     # datasource is provisioned via additionalDataSources below.
