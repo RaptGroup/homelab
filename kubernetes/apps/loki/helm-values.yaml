@@ -41,13 +41,22 @@ loki:
     type: filesystem
 
   # Loki 3.x requires an explicit schema. tsdb + filesystem +
-  # schema v13 is the current-generation combination; `from` is the
-  # day this install was first provisioned (schema entries are
-  # append-only — never edit a past entry, add a new one with a
-  # future `from` date to migrate).
+  # schema v13 is the current-generation combination.
+  #
+  # `from` is both the lower time bound this schema is valid for AND,
+  # for the first config entry, the earliest log timestamp Loki will
+  # accept. A line older than `from` is rejected with "no schema
+  # config found for time …" — and because Loki pushes are batched,
+  # that 500s the whole batch and silently drops the good entries
+  # alongside the old one. Pods always predate the logging stack
+  # (init-container and rotated-file logs carry CRI timestamps from
+  # before install), so `from` must sit well in the past, not on the
+  # install date. Schema entries are append-only: to change `schema:`
+  # or `store:` later, append a new entry with a future `from` —
+  # never edit this one.
   schemaConfig:
     configs:
-      - from: "2026-05-15"
+      - from: "2024-01-01"
         store: tsdb
         object_store: filesystem
         schema: v13
