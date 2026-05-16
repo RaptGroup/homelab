@@ -21,6 +21,18 @@ controller:
   # future chart bump must not silently change it.
   type: daemonset
 
+  # `rockingham` is 3 control-plane + 3 worker nodes; the control-
+  # plane nodes carry `node-role.kubernetes.io/control-plane:
+  # NoSchedule`. A log collector has to cover all 6 — control-plane
+  # logs are exactly what you reach for when the cluster misbehaves
+  # (#176 user story 3, #183 acceptance "one Ready pod on every
+  # node"). Tolerating every NoSchedule taint matches the node-
+  # exporter DaemonSet in this same namespace — the other per-node
+  # observability agent.
+  tolerations:
+    - effect: NoSchedule
+      operator: Exists
+
 # Alloy's own River program. `tpl`-rendered by the chart, but this
 # config uses no Go-template syntax — `$1` below is River relabel
 # capture-group syntax, not a template variable.
