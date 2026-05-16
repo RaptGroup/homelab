@@ -63,9 +63,10 @@ no need to read the chart to know what's actually being passed.
 
 ## Why this isn't kube-prometheus-stack
 
-The lab's observability plan defers `kube-prometheus-stack` to a
-future learning-deep-dive pass. metrics-server is a strictly smaller
-thing and shipping it doesn't shortcut that pass:
+metrics-server is **not** part of the
+[observability stack](./observability/), and the distinction is worth
+being explicit about. metrics-server is a strictly smaller thing, and
+the two run side by side:
 
 |                  | metrics-server                                     | kube-prometheus-stack                                                     |
 |------------------|----------------------------------------------------|---------------------------------------------------------------------------|
@@ -75,11 +76,14 @@ thing and shipping it doesn't shortcut that pass:
 | Footprint        | One Deployment, 100m CPU / 200Mi RAM               | Prometheus, Alertmanager, node-exporter, kube-state-metrics, Grafana, etc |
 | Maintenance      | None — no dashboards, no rules                     | Dashboards, rules, recording, retention                                   |
 
-metrics-server is the Tier-0 floor: enough to answer "how loaded is
-the cluster right now" without committing to a full observability
-stack. Tier-1 ([Hubble UI](./hubble-ui/)) covers network flow
-visibility on the same "free, no extra pipeline" footing. Tier-2
-(`kube-prometheus-stack`) gets brought up later, deliberately.
+metrics-server stays the lightweight resource-metrics floor —
+`kubectl top`, HPA, the Homepage widget — with no pipeline to
+maintain. It does not go away now that the
+[observability stack](./observability/) has shipped: Prometheus does
+not serve the `metrics.k8s.io` API that `kubectl top` and HPA read.
+[Hubble UI](./hubble-ui/) covers live network-flow visibility on the
+same "free, no extra pipeline" footing. The three coexist, each
+answering a different question.
 
 ## Verifying after first sync
 

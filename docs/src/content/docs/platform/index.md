@@ -28,6 +28,11 @@ and across the [Networking](/homelab/networking/split-horizon-dns/) and
 [Applications](/homelab/applications/lab-gateway/) sections, so it is
 deliberately out of scope here.
 
+This section also carries one page that is not a bootstrapped service:
+[Observability for developers](./observability-for-developers/) — the
+one-page contract for instrumenting an app with metrics, logs, alerts,
+and traces on the [observability stack](/homelab/applications/observability/).
+
 ## Why these four are bootstrapped via Terraform
 
 The full rationale lives in
