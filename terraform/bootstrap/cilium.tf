@@ -1,18 +1,12 @@
-resource "helm_release" "cilium" {
-  name             = "cilium"
-  namespace        = "kube-system"
-  repository       = "https://helm.cilium.io"
-  chart            = "cilium"
-  version          = var.cilium_chart_version
-  create_namespace = false # kube-system always exists
-  atomic           = true
-  wait             = true
-  timeout          = 600
-
-  # Talos-specific values pinned by ADR-0002. Edits here are load-bearing —
-  # missing one (cgroup.autoMount.enabled is the canonical example) breaks
-  # node bring-up in confusing ways.
-  values = [yamlencode({
+# Cilium Helm values — Talos-specific pins per ADR-0002. Edits here are
+# load-bearing — missing one (cgroup.autoMount.enabled is the canonical
+# example) breaks node bring-up in confusing ways.
+#
+# Held in a `local` rather than inlined into `helm_release.cilium` so the
+# `cilium_envoy_resync` resource below can hash it: a values-only edit
+# must trip the envoy resync just as a chart-version bump does.
+locals {
+  cilium_values = yamlencode({
     # eBPF dataplane replaces kube-proxy entirely; Talos ships without one.
     kubeProxyReplacement = true
 
@@ -126,7 +120,21 @@ resource "helm_release" "cilium" {
         ]
       }
     }
-  })]
+  })
+}
+
+resource "helm_release" "cilium" {
+  name             = "cilium"
+  namespace        = "kube-system"
+  repository       = "https://helm.cilium.io"
+  chart            = "cilium"
+  version          = var.cilium_chart_version
+  create_namespace = false # kube-system always exists
+  atomic           = true
+  wait             = true
+  timeout          = 600
+
+  values = [local.cilium_values]
 
   depends_on = [
     kubectl_manifest.gateway_api_crds,
@@ -220,16 +228,27 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
 # outage (#196). Cilium runs Envoy as a separate long-lived DaemonSet
 # (external-envoy mode). Any change to `helm_release.cilium` rolls the
 # cilium-agent DaemonSet, and a restarted agent re-allocates the L7
-# (Gateway API) proxy ports — but the chart never rolls `cilium-envoy`,
-# so the envoy pods keep their listeners on the OLD ports. eBPF then
-# redirects every `*.lab.jackhall.dev` Gateway flow to a dead proxy
-# port and the lab Gateway blackholes until envoy is restarted too.
+# (Gateway API) proxy ports. A values-only change does not roll
+# `cilium-envoy`, so the envoy pods keep their listeners on the OLD
+# ports; eBPF then redirects every `*.lab.jackhall.dev` Gateway flow to
+# a dead proxy port and the lab Gateway blackholes until envoy is
+# restarted too. (A chart-version bump rolls envoy via its image change
+# and so doesn't hit this on its own — but the resync covers both.)
 #
 # This resource force-rolls `cilium-envoy` whenever the Cilium release
-# revision moves, closing that gap automatically on every apply that
-# touches Cilium. It needs a `kubectl` binary on the apply runner — the
-# bootstrap root already requires cluster kubeconfig access for its
-# providers, so this only adds the binary dependency.
+# changes. The trigger is `var.cilium_chart_version` plus a hash of the
+# rendered Helm values — both known at plan time, so the resync is
+# replaced (and its local-exec runs) in the SAME `tofu apply` that
+# changes Cilium. `depends_on` orders it after the Helm upgrade.
+#
+# An earlier revision-based trigger (`helm_release.cilium.metadata[0]
+# .revision`) lagged by one apply: the Helm provider does not surface
+# the new revision at plan time, so the resync only fired on the *next*
+# apply — too late to cover the change that caused the desync.
+#
+# It needs a `kubectl` binary on the apply runner — the bootstrap root
+# already requires cluster kubeconfig access for its providers, so this
+# only adds the binary dependency.
 #
 # Mitigation, not cure: a brief (~1-2 min) degraded window remains
 # during the apply itself, and the underlying proxy-port instability is
@@ -239,8 +258,13 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
 # resource until that staged upgrade lands and a cilium-agent restart is
 # shown not to desync the L7 proxy ports.
 resource "terraform_data" "cilium_envoy_resync" {
-  # Bumps on every helm upgrade of the Cilium release.
-  triggers_replace = [helm_release.cilium.metadata[0].revision]
+  # Replaced — re-running the resync — whenever the Cilium chart version
+  # or the rendered Helm values change. Both are known at plan time, so
+  # this fires in the same apply as the Cilium change.
+  triggers_replace = [
+    var.cilium_chart_version,
+    sha1(local.cilium_values),
+  ]
 
   provisioner "local-exec" {
     # `kubectl` must be on the apply runner; `--context` is passed only
@@ -250,4 +274,8 @@ resource "terraform_data" "cilium_envoy_resync" {
       kubectl --kubeconfig "${var.kubeconfig_path}" ${var.kube_context != "" ? "--context ${var.kube_context}" : ""} -n kube-system rollout status  daemonset/cilium-envoy --timeout=300s
     EOT
   }
+
+  # The trigger no longer references helm_release.cilium, so order the
+  # envoy roll after the Helm upgrade explicitly.
+  depends_on = [helm_release.cilium]
 }
