@@ -153,12 +153,11 @@ alloy:
 
       // ── OTLP receivers (Phase 3 hook, unrouted today) ───────────
       // gRPC :4317 and HTTP :4318 are open cluster-wide via the
-      // Service extraPorts above. They accept OTLP now and drop
-      // everything — the output lists are empty by design. ADR-0007
-      // Phase 3 adds Tempo and wires it into traces here; until
-      // then this is a no-op landing pad, so an app can be pointed
-      // at alloy.observability.svc:4317 / :4318 today without having
-      // to change endpoints when tracing actually lands.
+      // Service extraPorts above. They accept OTLP now and drop it
+      // at the debug exporter below — a no-op landing pad, so an app
+      // can be pointed at alloy.observability.svc:4317 / :4318 today
+      // and keep that endpoint when ADR-0007 Phase 3 adds Tempo as
+      // the real traces consumer.
       otelcol.receiver.otlp "default" {
         grpc {
           endpoint = "0.0.0.0:4317"
@@ -167,10 +166,23 @@ alloy:
           endpoint = "0.0.0.0:4318"
         }
         output {
-          metrics = []
-          logs    = []
-          traces  = []
+          metrics = [otelcol.exporter.debug.sink.input]
+          logs    = [otelcol.exporter.debug.sink.input]
+          traces  = [otelcol.exporter.debug.sink.input]
         }
+      }
+
+      // The terminal sink for the OTLP receiver. An otelcol receiver
+      // only starts its listeners once at least one consumer is
+      // wired — empty output lists leave :4317/:4318 closed, which
+      // defeats the point of a Phase 3 endpoint hook. The debug
+      // exporter is that consumer: it accepts every signal and drops
+      // it. verbosity "basic" emits one summary line per batch, and
+      // there is no OTLP traffic today, so it stays silent. ADR-0007
+      // Phase 3 swaps this for the Tempo exporter; the receiver block
+      // above does not change.
+      otelcol.exporter.debug "sink" {
+        verbosity = "basic"
       }
 
 # Alloy's own metrics flow back to Prometheus via a ServiceMonitor —
