@@ -1,0 +1,54 @@
+# Loki — single-binary log aggregation backend for the ADR-0007
+# self-hosted observability stack. Second-to-last slice (#176,
+# tracer-bullet #4): Loki stands up and Grafana lists it as a
+# datasource, but no logs flow until the Alloy slice (#5) ships the
+# shipper. Zero rows on a LogQL query is the expected steady state
+# for this slice.
+#
+# Multi-source layout (mirrors kubernetes/apps/kube-prometheus-stack/):
+#   - Source 1: grafana/loki from the upstream Helm repo.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives
+#     in Git alongside the Application.
+#
+# No manifests/ directory: the `observability` Namespace is owned by
+# the kube-prometheus-stack Application (ADR-0007 — "the namespace is
+# declared once in the kube-prometheus-stack app's manifests/ so Loki
+# and Alloy attach without owning their own Namespace manifest").
+# Loki is ClusterIP-only — Grafana is the stack's only externally
+# routed surface — so there is no HTTPRoute either.
+#
+# Default sync wave: ADR-0007 puts all observability slices at wave 0
+# with no hard ordering. Loki sits a chart bump away from
+# kube-prometheus-stack and Alloy precisely because each is its own
+# Application.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.55.0
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/kubernetes/apps/loki/helm-values.yaml
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

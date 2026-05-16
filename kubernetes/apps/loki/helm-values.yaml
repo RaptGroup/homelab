@@ -1,0 +1,131 @@
+# grafana/loki values — Loki slice of the ADR-0007 observability
+# stack. Re-read ADR-0007 before touching anything here.
+#
+# DEPLOYMENT SHAPE
+#
+#   Single-binary mode (`deploymentMode: SingleBinary`): one Loki
+#   process running every module (`targetModule: all`), backed by a
+#   filesystem object store on one Longhorn PVC. This is the
+#   chart-recommended shape for installs under ~1 TB/day — a 6-node
+#   homelab is comfortably inside that envelope. The Simple-Scalable
+#   read/write/backend tiers (the chart default `SimpleScalable`
+#   mode) are explicitly zeroed to nil replicas below; leaving them
+#   at their defaults would stand up empty Deployments alongside the
+#   single binary.
+#
+#   Object storage is the local filesystem, not S3/GCS. ADR-0007's
+#   "Out of Scope" defers remote-write of chunks to GCS via the
+#   tsdb shipper — when that lands it is a change to `loki.storage`
+#   here, not a re-architecture.
+
+deploymentMode: SingleBinary
+
+loki:
+  # Single-tenant homelab: no `X-Scope-OrgID` tenancy. With
+  # auth_enabled left at the chart default (`true`) every read and
+  # write would need a tenant header, and Grafana's Explore queries
+  # would fail with "no org id". ADR-0007's mutual-trust tenancy
+  # model is single-tenant by decision.
+  auth_enabled: false
+
+  # Single binary => a single replica => one copy of each stream.
+  # The chart default (3) is a Simple-Scalable assumption and makes
+  # Loki refuse to start when it can't reach two more ingesters.
+  commonConfig:
+    replication_factor: 1
+
+  # Filesystem object store for chunks and the index. The chart
+  # templates the chunks/rules directories under `/var/loki` (the
+  # `commonConfig.path_prefix`), which is the Longhorn PVC mount.
+  storage:
+    type: filesystem
+
+  # Loki 3.x requires an explicit schema. tsdb + filesystem +
+  # schema v13 is the current-generation combination; `from` is the
+  # day this install was first provisioned (schema entries are
+  # append-only — never edit a past entry, add a new one with a
+  # future `from` date to migrate).
+  schemaConfig:
+    configs:
+      - from: "2026-05-15"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+
+  # Retention per ADR-0007: 14 days of logs (336h). The compactor
+  # is what actually enforces it — `retention_enabled` turns
+  # deletion on, `retention_delete_delay` is the grace window before
+  # a chunk past the horizon is physically removed. `delete_request_store`
+  # must be set for the compactor to track deletions; filesystem
+  # keeps it on the same PVC as the chunks.
+  limits_config:
+    retention_period: 336h
+  compactor:
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: filesystem
+
+# The single Loki process. 100 GB Longhorn PVC for chunks + index
+# per ADR-0007 (ADR-0005's heuristic: singleton, valuable, must
+# survive node drain). enableStatefulSetAutoDeletePVC is forced off
+# so an Argo prune of the StatefulSet cannot take 14 days of logs
+# with it — the PVC outlives the workload and is reclaimed by hand.
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: longhorn
+    accessModes:
+      - ReadWriteOnce
+    size: 100Gi
+    enableStatefulSetAutoDeletePVC: false
+
+# Zero out the Simple-Scalable tiers — single-binary mode supersedes
+# them. Without this the chart renders three extra empty workloads.
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+
+# Loki's own metrics flow back to Prometheus via a ServiceMonitor —
+# the kube-prometheus-stack slice set wide-open ServiceMonitor
+# discovery, so this is scraped with no extra selector wiring.
+monitoring:
+  serviceMonitor:
+    enabled: true
+  # Bundled Loki dashboards and recording/alerting rules are out of
+  # scope for this slice (dashboards-as-code is #176 tracer-bullet
+  # #7; alerting is #6). Keep them off so this slice ships only Loki.
+  dashboards:
+    enabled: false
+  rules:
+    enabled: false
+
+# The nginx `gateway` fronts a multi-component Loki to fan reads and
+# writes across tiers. A single binary needs no fan-out, and ADR-0007
+# routes Grafana straight at `loki.observability.svc:3100`. Disabling
+# it keeps the slice to one pod and one Service named `loki`.
+gateway:
+  enabled: false
+
+# memcached chunk/results caches are sized for multi-tier Loki and
+# request gigabytes of RAM. A homelab single binary serves from the
+# Longhorn PVC directly — leave both off.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+# lokiCanary writes and reads synthetic log lines as a liveness
+# probe; it belongs with the Alloy slice once real log shipping
+# exists. The helm-test pod is CI noise here — Argo's own
+# sync-and-health check is this slice's test harness.
+lokiCanary:
+  enabled: false
+test:
+  enabled: false

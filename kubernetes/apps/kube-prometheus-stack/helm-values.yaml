@@ -93,12 +93,26 @@ grafana:
       labelValue: "1"
       searchNamespace: ALL
     # The chart's sidecar.datasources block provisions the Prometheus
-    # datasource (default, in-cluster) automatically. Loki datasource
-    # is intentionally deferred — added in the Loki slice (#176 plan,
-    # tracer-bullet #4).
+    # datasource (default, in-cluster) automatically. The Loki
+    # datasource is provisioned via additionalDataSources below.
     datasources:
       enabled: true
       defaultDatasourceEnabled: true
+
+  # Loki datasource (#176, tracer-bullet #4). The Loki Application is
+  # a sibling slice under kubernetes/apps/loki/; its datasource is
+  # wired from here because Grafana lives in this chart. URL is the
+  # single-binary Loki Service in the shared `observability`
+  # namespace. Grafana Explore lists Loki and accepts LogQL
+  # immediately; queries return zero rows until the Alloy slice
+  # (#176, tracer-bullet #5) ships log collection — that zero-row
+  # state is expected, not a misconfiguration.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.observability.svc:3100
+      isDefault: false
 
   # No Ingress — Grafana is reached via the HTTPRoute under
   # manifests/grafana-httproute.yaml attaching to the central `lab`
