@@ -120,6 +120,28 @@ wildcard `Certificate`, the LE `ClusterIssuer`, and the `gsm`
 `ClusterSecretStore`. See the repo-root [`README.md`](../../README.md)
 for prerequisites.
 
+## Upgrading Cilium
+
+Cilium does **not** support skipping minor versions. The upstream
+upgrade guide is explicit: *"Always perform rollbacks and upgrades
+between one minor release at a time."* Bump `cilium_chart_version` by a
+single minor, `tofu apply`, validate, then repeat — never jump two
+minors in one apply.
+
+Every Cilium apply rolls the `cilium-agent` DaemonSet, which
+re-allocates the L7 (Gateway API) proxy ports without rolling
+`cilium-envoy`. The `terraform_data.cilium_envoy_resync` resource in
+`cilium.tf` force-rolls envoy on each release-revision change to cover
+that gap (#196). Expect a ~1–2 min degraded window on the `lab` Gateway
+during the apply.
+
+The cluster runs Kubernetes 1.36, ahead of every released Cilium
+minor's e2e-tested matrix. The staged walk toward 1.19.x (e2e-tested to
+k8s 1.35) is tracked in #196 and its follow-up issues — one hop per
+issue, applied and validated in order. Each hop may also require
+bumping `gateway_api_version` to the Gateway API release the new Cilium
+minor supports.
+
 ## DNS-01 auth path
 
 cert-manager authenticates to Cloud DNS via the cluster's Workload
