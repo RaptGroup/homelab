@@ -61,15 +61,15 @@ variable "argocd_target_revision" {
 # --- Chart / manifest version pins ----------------------------------------
 
 variable "gateway_api_version" {
-  description = "Tag (with leading v) of kubernetes-sigs/gateway-api whose standard-install.yaml is applied. Must be supported by the chosen Cilium version."
+  description = "Tag (with leading v) of kubernetes-sigs/gateway-api whose experimental-install.yaml is applied. Must be supported by the chosen Cilium version — Cilium 1.19 supports Gateway API v1.4.1."
   type        = string
-  default     = "v1.3.0"
+  default     = "v1.4.1"
 }
 
 variable "cilium_chart_version" {
-  description = "Cilium Helm chart version (matches the Cilium minor). Cilium does not support skipping minor versions on upgrade — bump one minor at a time and `tofu apply` between each (see \"Upgrading Cilium\" in the README). The cluster runs Kubernetes 1.36, which no released Cilium minor yet lists as e2e-tested; the staged walk to 1.19.x (#196 hop 1, plus follow-ups) closes the gap to a single minor."
+  description = "Cilium Helm chart version (matches the Cilium minor). Cilium does not support skipping minor versions on upgrade — bump one minor at a time and `tofu apply` between each (see \"Upgrading Cilium\" in the README). The staged walk off the unsupported 1.16.5 / Kubernetes 1.36 pairing (#196, hops #199/#204/#198) landed the cluster on 1.19.x — e2e-tested to k8s 1.35, one minor behind the cluster's 1.36. Closing that last minor needs Cilium 1.20 once it lists k8s 1.36 as tested."
   type        = string
-  default     = "1.18.10"
+  default     = "1.19.4"
 }
 
 variable "cert_manager_chart_version" {

@@ -135,12 +135,14 @@ re-allocates the L7 (Gateway API) proxy ports without rolling
 that gap (#196). Expect a ~1–2 min degraded window on the `lab` Gateway
 during the apply.
 
-The cluster runs Kubernetes 1.36, ahead of every released Cilium
-minor's e2e-tested matrix. The staged walk toward 1.19.x (e2e-tested to
-k8s 1.35) is tracked in #196 and its follow-up issues — one hop per
-issue, applied and validated in order. Each hop may also require
-bumping `gateway_api_version` to the Gateway API release the new Cilium
-minor supports.
+The cluster runs Kubernetes 1.36. The staged walk off the unsupported
+1.16.5 / k8s 1.36 pairing — tracked in #196, one hop per issue
+(#199 → #204 → #198), applied and validated in order — landed Cilium on
+1.19.x. Each hop also bumped `gateway_api_version` to the Gateway API
+release the new Cilium minor supports; 1.19 is on `v1.4.1`. Cilium 1.19
+is e2e-tested to k8s 1.35, one minor behind 1.36 — the closest released
+minor. Fully closing that gap needs Cilium 1.20 once it lists k8s 1.36
+as tested.
 
 ## DNS-01 auth path
 

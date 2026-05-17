@@ -145,9 +145,15 @@ resource "helm_release" "cilium" {
 # below the static cluster range (.240–.247). AdGuard Home is pinned to
 # .200 by an ArgoCD-managed Service annotation; the rest of the pool is
 # allocated on demand.
+# `cilium.io/v2` — `CiliumLoadBalancerIPPool` was promoted to the `v2`
+# API group in Cilium 1.19; the 1.18→1.19 upgrade notes call out moving
+# off the now-deprecated `v2alpha1`. `v2` is the CRD storage version and
+# the spec schema is unchanged (`blocks` of `start`/`stop`).
+# `CiliumL2AnnouncementPolicy` below stays `v2alpha1` — 1.19 has not
+# promoted that kind.
 resource "kubectl_manifest" "cilium_lb_pool" {
   yaml_body = yamlencode({
-    apiVersion = "cilium.io/v2alpha1"
+    apiVersion = "cilium.io/v2"
     kind       = "CiliumLoadBalancerIPPool"
     metadata = {
       name = "lab-pool"
@@ -253,10 +259,14 @@ resource "kubectl_manifest" "cilium_l2_announcement_policy" {
 # Mitigation, not cure: a brief (~1-2 min) degraded window remains
 # during the apply itself, and the underlying proxy-port instability is
 # tied to running Cilium on a Kubernetes minor (1.36) ahead of every
-# released Cilium release's e2e-tested matrix. #196 walks Cilium up one
-# minor at a time toward 1.19.x (this is hop 1: 1.16 → 1.17). Keep this
-# resource until that staged upgrade lands and a cilium-agent restart is
-# shown not to desync the L7 proxy ports.
+# released Cilium release's e2e-tested matrix. #196 walked Cilium up one
+# minor at a time to 1.19.x (hops #199/#204/#198) — the closest minor to
+# k8s 1.36. Keep this resource until a cilium-agent restart on 1.19 is
+# shown not to desync the L7 proxy ports: per #198, verify L7LB proxy-port
+# stability across an agent rollout (`cilium-dbg bpf lb list` L7LB port vs
+# `cilium-dbg envoy admin listeners`) once hop 3 is applied, and if the
+# ports are stable, remove this resource and its README reference in a
+# follow-up.
 resource "terraform_data" "cilium_envoy_resync" {
   # Replaced — re-running the resync — whenever the Cilium chart version
   # or the rendered Helm values change. Both are known at plan time, so
