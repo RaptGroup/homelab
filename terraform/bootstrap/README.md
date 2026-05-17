@@ -128,13 +128,6 @@ between one minor release at a time."* Bump `cilium_chart_version` by a
 single minor, `tofu apply`, validate, then repeat — never jump two
 minors in one apply.
 
-Every Cilium apply rolls the `cilium-agent` DaemonSet, which
-re-allocates the L7 (Gateway API) proxy ports without rolling
-`cilium-envoy`. The `terraform_data.cilium_envoy_resync` resource in
-`cilium.tf` force-rolls envoy on each release-revision change to cover
-that gap (#196). Expect a ~1–2 min degraded window on the `lab` Gateway
-during the apply.
-
 The cluster runs Kubernetes 1.36. The staged walk off the unsupported
 1.16.5 / k8s 1.36 pairing — tracked in #196, one hop per issue
 (#199 → #204 → #198), applied and validated in order — landed Cilium on
