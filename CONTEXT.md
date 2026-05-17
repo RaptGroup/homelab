@@ -287,6 +287,50 @@ Requires a Talos system-extension upgrade pass (`siderolabs/iscsi-tools`,
 `siderolabs/util-linux-tools`), an `iscsi_tcp` kernel module, and a
 `UserVolume` patch carving an XFS partition for `/var/mnt/longhorn`.
 
+## Observability
+
+### `observability` (namespace)
+
+The single Kubernetes namespace shared by the three Argo Applications
+of the self-hosted observability stack — `kube-prometheus-stack`,
+`loki`, and `alloy`. The namespace manifest is declared once, in
+`kubernetes/apps/kube-prometheus-stack/manifests/`, so Loki and Alloy
+attach to it without owning a duplicate; its Pod Security Admission is
+set to `privileged` because node-exporter needs host networking and
+hostPath mounts. See ADR-0007 (the observability ADR).
+
+### Observability stack
+
+Metrics and logs for `rockingham`, self-hosted on the cluster:
+**kube-prometheus-stack** (Prometheus, Grafana, Alertmanager,
+node-exporter, kube-state-metrics), **Loki** (single-binary log
+store, 14-day retention), and **Alloy** (per-node DaemonSet shipping
+pod logs to Loki). Three independently-versioned Argo Applications,
+not an LGTM rollup. Grafana at `grafana.lab.jackhall.dev` is the only
+externally-routed surface — anonymous LAN viewers, admin-only
+editing; Prometheus and Alertmanager are ClusterIP-only. Metrics
+retention is 30 days. Distributed tracing (Tempo) is deferred to
+Phase 3; Alloy's OTLP receiver
+(`alloy.observability.svc:4317`/`:4318`) is live but unrouted as the
+pre-paid hook. The developer contract is `ServiceMonitor` for metrics
+and zero-action auto-collection for logs. See ADR-0007.
+
+### Alert pipeline (Discord + healthchecks.io)
+
+How a firing alert reaches the operator. Prometheus evaluates alert
+rules (the chart-bundled set plus any namespace-scoped
+`PrometheusRule`) and hands firing alerts to Alertmanager.
+Alertmanager routes actionable alerts to a **Discord** webhook, and
+the chart's built-in `Watchdog` alert is routed to a separate
+receiver that continuously pings **healthchecks.io** — the
+dead-man's switch that pages the operator if Prometheus itself dies.
+The Discord webhook URL and the healthchecks.io ping URL are GSM
+containers in `terraform/gcp/`, synced into the `observability`
+namespace via ESO, matching the credential pipeline used everywhere
+else in this repo. Per ADR-0007 this pipeline ships as its own stack
+slice; until that slice lands, Alertmanager runs but routes nothing
+externally.
+
 ## ARC (GitHub Actions runners)
 
 Two scale sets, both backed by the same `Rockingham Homelab ARC` GitHub App
