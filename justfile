@@ -4,8 +4,26 @@ default:
 # Run post-bootstrap smoke tests against the current kubeconfig context
 smoke: smoke-cilium smoke-bootstrap
 
+# cilium-cli's test namespaces — `cilium-test-1` plus the `cilium-test-ccnp*`
+# pair for the CiliumClusterwideNetworkPolicy tests — would otherwise inherit
+# Talos's cluster-wide PodSecurity default (`enforce: baseline`), which
+# rejects the test fixtures: they need NET_RAW, hostNetwork, and hostPort.
+# cilium-cli's `--namespace-labels` flag reaches only the primary namespace,
+# so pre-create all of them `privileged` instead — cilium-cli reuses an
+# existing namespace as-is. Names track cilium-cli's convention for the
+# default `--test-concurrency 1`.
+
 # cilium-cli connectivity test against the current cluster
 smoke-cilium:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for ns in cilium-test-1 cilium-test-ccnp1 cilium-test-ccnp2; do
+      kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+      kubectl label namespace "$ns" --overwrite \
+        pod-security.kubernetes.io/enforce=privileged \
+        pod-security.kubernetes.io/warn=privileged \
+        pod-security.kubernetes.io/audit=privileged
+    done
     cilium connectivity test
 
 # Assert wildcard Certificate, LE ClusterIssuer, and gsm ClusterSecretStore are Ready=True
