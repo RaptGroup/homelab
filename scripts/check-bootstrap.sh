@@ -47,17 +47,21 @@ for entry in "${RESOURCES[@]}"; do
   label="${kind}/${name}"
   [[ -n "$ns" ]] && label="${kind} -n ${ns}/${name}"
 
+  # Cluster-scoped kinds leave ns_args empty. Expansions below use the
+  # `"${ns_args[@]+"${ns_args[@]+"${ns_args[@]}"}"}"` form because a bare `"${ns_args[@]+"${ns_args[@]}"}"`
+  # on an empty array under `set -u` is an "unbound variable" error in
+  # bash 3.2 (macOS's /bin/bash) — only made safe in bash 4.4.
   ns_args=()
   [[ -n "$ns" ]] && ns_args=(-n "$ns")
 
   echo "==> ${label}"
-  if ! kubectl wait "${ns_args[@]}" --for=condition=Ready=True \
+  if ! kubectl wait "${ns_args[@]+"${ns_args[@]}"}" --for=condition=Ready=True \
       --timeout="$TIMEOUT" "${kind}/${name}"; then
     failed+=("$label")
     # Surface the underlying status so the operator does not need a second
     # describe to see *why* the wait failed (e.g. DNS-01 propagation,
     # missing GSM SA key).
-    kubectl describe "${ns_args[@]}" "${kind}/${name}" >&2 || true
+    kubectl describe "${ns_args[@]+"${ns_args[@]}"}" "${kind}/${name}" >&2 || true
   fi
 done
 
