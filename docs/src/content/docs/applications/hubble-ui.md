@@ -1,14 +1,16 @@
 ---
 title: Hubble UI
-description: Cilium's network-flow visualizer at hubble.lab.jackhall.dev — the entire Tier 1 observability story for the lab.
+description: Cilium's live network-flow visualizer at hubble.lab.jackhall.dev — the forensic complement to the time-series observability stack.
 ---
 
 [Hubble UI](https://docs.cilium.io/en/stable/observability/hubble/) is
 Cilium's flow-log frontend: a live service map plus an L4/L7 flow log
 that surfaces what's actually talking to what inside the cluster. It is
-the entire Tier 1 observability story for the Rockingham Homelab —
-there is no Prometheus, no Grafana, no Alertmanager. The deeper
-observability stack is a deliberately deferred Phase-2 deep-dive.
+the lab's **live network-flow** view — the forensic complement to the
+time-series [observability stack](./observability/) (Prometheus,
+Grafana, Loki). The two answer different question shapes and run side
+by side; see
+[ADR-0007](https://github.com/RaptGroup/homelab/blob/main/docs/adr/0007-observability-as-self-hosted-stack.md).
 
 ## Where it runs
 
@@ -49,10 +51,14 @@ be maintained. Hubble UI surfaces three things:
 
 For the lab's current scale (≤8 addons, ≤6 nodes) this is more than
 enough to answer "is X reaching Y" and "did the new NetworkPolicy break
-something." When workload metrics or alerting become load-bearing, the
-plan is to bring up `kube-prometheus-stack` as a separate Phase-2 pass —
-`metrics-server` covers the narrower `kubectl top` / HPA case in the
-meantime ([metrics-server](./metrics-server/)).
+something." Time-series questions — the trend of drops over a week,
+correlating a spike against what an addon logged at the time, alerting
+— are answered by the [observability stack](./observability/), which
+also scrapes Hubble's own metrics endpoints so the Cilium dashboard
+works. Hubble UI and that stack are complementary, not a migration:
+ADR-0007 considered "Hubble UI replaces a metrics stack" and rejected
+it. [metrics-server](./metrics-server/) covers the narrower
+`kubectl top` / HPA case.
 
 ## Accessing the UI
 
