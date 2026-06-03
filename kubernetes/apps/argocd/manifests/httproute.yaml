@@ -26,7 +26,7 @@ metadata:
     gethomepage.dev/name: ArgoCD
     gethomepage.dev/description: GitOps controller
     gethomepage.dev/group: Platform
-    gethomepage.dev/icon: argocd.png
+    gethomepage.dev/icon: argo-cd.png
     gethomepage.dev/href: https://argocd.lab.jackhall.dev
     gethomepage.dev/widget.type: argocd
     gethomepage.dev/widget.url: http://argocd-server.argocd:80
