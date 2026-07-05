@@ -27,7 +27,8 @@ ArgoCD. Phase 1 addons are running today.
 - [`kubernetes/apps/`](./kubernetes/apps) — ArgoCD-managed addons, one
   directory per addon (`adguard-home`, `arc-controller`,
   `arc-runners-raptgroup`, `arc-runners-brazostech`, `cloudflared`,
-  `homepage`, `hubble-ui`, `lab-gateway`, `projects-gateway`). Adding an
+  `harbor`, `homepage`, `hubble-ui`, `lab-gateway`, `longhorn`,
+  `loki`, `kube-prometheus-stack`, `projects-gateway`). Adding an
   addon is a new directory here; Terraform is not touched.
 - [`talos/`](./talos) — per-node Talos machine-config patches and the
   bring-up runbook for the cluster.

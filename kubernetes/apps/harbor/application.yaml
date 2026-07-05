@@ -1,0 +1,59 @@
+# Harbor — self-hosted OCI image + Helm chart registry for the homelab,
+# LAN-only at https://harbor.lab.jackhall.dev. Ships as its own Argo
+# Application under kubernetes/apps/harbor/ (#221).
+#
+# Harbor is the homelab's LAN registry: artifacts the homelab builds and
+# wants to keep on its own infra live here. It is distinct from the GCP
+# Artifact Registry `projects` repo (ADR-0006 / #139), which remains the
+# keyless WIF push/pull path for *preview-environment* images — Harbor
+# decouples those artifacts from GCP. Public reachability via the
+# `projects` Gateway + Cloudflare Tunnel is explicitly out of scope
+# (see the issue's "Out of scope" list).
+#
+# Multi-source layout (mirrors kubernetes/apps/longhorn/ and
+# kube-prometheus-stack/):
+#   - Source 1: harbor chart from https://helm.goharbor.io.
+#   - Source 2: $values ref into this repo, so helm-values.yaml lives in
+#     Git alongside the Application.
+#   - Source 3: the manifests/ directory in this repo, holding the
+#     `harbor` Namespace, the ExternalSecret syncing the admin password
+#     from GSM, and the HTTPRoute attaching to the central `lab` Gateway.
+#     Argo applies these directly without templating.
+#
+# Default sync wave: this Application has no hard ordering against any
+# other addon — the `harbor` Namespace it owns is declared here, and
+# Longhorn (sync wave -10) is already up before this chart's PVCs bind.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+  sources:
+    - repoURL: https://helm.goharbor.io
+      chart: harbor
+      targetRevision: 1.19.1
+      helm:
+        releaseName: harbor
+        valueFiles:
+          - $values/kubernetes/apps/harbor/helm-values.yaml
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:RaptGroup/homelab.git
+      targetRevision: main
+      path: kubernetes/apps/harbor/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

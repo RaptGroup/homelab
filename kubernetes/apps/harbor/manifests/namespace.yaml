@@ -1,0 +1,18 @@
+# The `harbor` namespace, owned by this Application. Declared here so
+# the chart's `CreateNamespace=true` sync option does not race the
+# ExternalSecret and HTTPRoute in the same manifests/ directory.
+#
+# No Pod Security Admission opt-out label: unlike the
+# `observability` and `longhorn-system` namespaces (which carry
+# `pod-security.kubernetes.io/enforce: privileged` for host-binding
+# components like node-exporter and Longhorn's iSCSI helpers), Harbor
+# runs as non-root UIDs throughout (10000 for components, 999 for
+# postgres/redis) with no hostNetwork / hostPID / hostPath mounts. The
+# cluster's default PSA posture (unrestricted) admits the chart's pods
+# as shipped; a `restricted` opt-out would just be unset here, which is
+# the same posture every other non-host addon namespace in this repo
+# takes (adguard-home, hubble-ui, cloudflared, arc-controller, etc.).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbor
