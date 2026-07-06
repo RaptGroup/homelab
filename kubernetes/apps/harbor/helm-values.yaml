@@ -1,0 +1,119 @@
+# Harbor values — the homelab's LAN-only self-hosted OCI image + Helm
+# chart registry. Live at https://harbor.lab.jackhall.dev. See #221 and
+# the application.yaml + README in this directory for the design split
+# between Harbor (LAN/self-hosted) and the GCP Artifact Registry
+# `projects` repo (public/preview, ADR-0006 / #139).
+
+# Front door is a ClusterIP Service; TLS terminates at the central `lab`
+# Cilium Gateway (the wildcard *.lab.jackhall.dev cert from cert-manager).
+# The in-cluster hop from the Gateway to the nginx front Service is
+# plaintext HTTP on port 80 — same shape as grafana.lab.jackhall.dev
+# and every other addon's HTTPRoute in this repo. No LB-pool address is
+# consumed: the HTTPRoute cross-namespace-attaches to the existing .201
+# lab Gateway (CONTEXT.md → LB pool); no `lbipam.cilium.io/ips` pin is
+# needed (lint-apps treats ClusterIP-services-on-shared-Gateways as the
+# only pin-skip).
+expose:
+  type: clusterIP
+  tls:
+    # TLS terminates at the lab Gateway; in-cluster hop is cleartext.
+    # Disabling it here is what stops the chart from rendering the
+    # nginx HTTPS port on the ClusterIP Service and from minting a
+    # self-signed cert for in-cluster TLS (Harbor's internalTLS below
+    # is the inter-component story, kept default off).
+    enabled: false
+  clusterIP:
+    name: harbor
+    ports:
+      httpPort: 80
+    annotations: {}
+
+# Used to populate the docker/helm commands shown on the portal and the
+# token service URL returned to docker clients. Must be the LAN-facing
+# hostname — the lab Gateway front-door URL, not the in-cluster Service
+# DNS — so clients see the cert-bearing public face.
+externalURL: https://harbor.lab.jackhall.dev
+
+# Admin password is sourced via ESO from the `harbor-admin-password` GSM
+# container — see manifests/external-secret-harbor-admin.yaml. The chart
+# keys the admin password off the `HARBOR_ADMIN_PASSWORD` env var; the
+# native `existingSecretAdminPassword` / `existingSecretAdminPasswordKey`
+# knobs on this chart version (1.19.1) wire that env var to a
+# pre-existing K8s Secret so the plaintext password never lands in
+# helm-values.yaml, Git, or Argo state. The K8s Secret is named
+# `harbor-admin-password` (matching the GSM container name) and carries
+# the single key `HARBOR_ADMIN_PASSWORD`.
+#
+# Until the operator uploads a version to the GSM container, ESO reports
+# `SecretSyncedError`, the Secret is not created, and the Harbor core
+# pod fails to mount the env var — Argo reports the app `Degraded`
+# rather than silently masking the gap. Same fail-loud shape as the
+# Grafana admin credential (kube-prometheus-stack/manifests/external-secret-grafana-admin.yaml).
+existingSecretAdminPassword: harbor-admin-password
+existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+
+# Per-component filesystem PVCs (registry, database, redis, trivy,
+# jobservice). All five ride on `storageClassName: longhorn` per
+# ADR-0005: Harbor is heavier than a typical addon — it bundles
+# PostgreSQL, Redis, and Trivy alongside core/registry/jobservice/portal
+# — but each piece's state is singleton, valuable, and must survive node
+# drain (registry blobs, Trivy's vulnerability DB, the Harbor database).
+# local-path (the cluster default) would tie each component's data to
+# whatever node the pod first landed on. Longhorn is the named,
+# non-default StorageClass for exactly this category of workload.
+#
+# Sizing matches the issue's heuristic (registry ~50 Gi, the rest ~5 Gi
+# each — Trivy's vulnerability DB and Postgres's image-metadata tables
+# both fit comfortably in 5 Gi on a homelab scale, and the registry's
+# 50 Gi covers the typical homelab-built image set with room to grow).
+# Resize path is the standard Longhorn `kubectl patch pvc … storage:
+# …Gi` flow — the chart issues fresh PVCs at the sizes below, so a
+# permanent bump means editing this file and letting Longhorn's volume
+# expansion do the runtime growth.
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 50Gi
+    jobservice:
+      jobLog:
+        storageClass: longhorn
+        accessMode: ReadWriteOnce
+        size: 5Gi
+    database:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    redis:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    trivy:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 5Gi
+
+# Trivy left at chart default (enabled). It is the in-registry
+# vulnerability scanner — turning it off sheds ~one pod and the trivy
+# PVC, at the cost of losing scan results in the portal. Disable here
+# with `trivy.enabled: false` if the cluster is tight; documented in
+# this directory's README. Trivy is not wired into CI or Argo — its
+# scan results gate nothing, only display in the Harbor UI.
+trivy:
+  enabled: true
+
+# Harbor's internal TLS is between in-cluster components, separate from
+# the front-door TLS that the lab Gateway terminates. Left at chart
+# default (off) — the in-cluster hop is on the pod network, where
+# mTLS-by-default would just add cert-churn for no threat model gain at
+# homelab scale. internalTLS: enabled: false
+
+# No Ingress — Harbor is reached via the HTTPRoute under
+# manifests/harbor-httproute.yaml attaching to the central `lab` Cilium
+# Gateway (cross-namespace parentRef). Chart default ClusterIP Service
+# type is correct.
+# (the chart's `expose.type: clusterIP` path already disables ingress,
+# so no explicit `ingress:` block is needed here.)

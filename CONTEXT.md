@@ -287,6 +287,57 @@ Requires a Talos system-extension upgrade pass (`siderolabs/iscsi-tools`,
 `siderolabs/util-linux-tools`), an `iscsi_tcp` kernel module, and a
 `UserVolume` patch carving an XFS partition for `/var/mnt/longhorn`.
 
+## Harbor
+
+### `harbor` (namespace)
+
+The Kubernetes namespace owned by the `harbor` Argo Application
+(`kubernetes/apps/harbor/`, #221). Harbor — the self-hosted OCI image +
+Helm chart registry for the homelab — runs entirely in this namespace:
+core, registry, jobservice, portal, nginx front-door, PostgreSQL,
+Redis, and Trivy. The namespace manifest is declared in this app's
+`manifests/namespace.yaml`. No Pod Security Admission opt-out label is
+set: Harbor runs as non-root UIDs throughout (10000 for components,
+999 for postgres/redis) with no hostNetwork / hostPID / hostPath mounts,
+so the cluster's default PSA posture admits the chart's pods as
+shipped — unlike `observability` and `longhorn-system`, which need
+`privileged` for host-binding components.
+
+### `harbor.lab.jackhall.dev`
+
+The front-door URL of the Harbor registry on the LAN. Reached via the
+central `lab` Cilium Gateway at `.201` (CONTEXT.md → LB pool); the
+HTTPRoute in `kubernetes/apps/harbor/manifests/harbor-httproute.yaml`
+attaches cross-namespace to the `lab` Gateway in `gateway-system`, the
+same shape as `grafana.lab.jackhall.dev`. No LB-pool address is
+consumed: Harbor's front-door Service is `ClusterIP`, and the route
+rides the existing wildcard `*.lab.jackhall.dev` listener — no
+`lbipam.cilium.io/ips` pin and no new LB-pool address.
+
+TLS terminates at the lab Gateway with the LE wildcard cert (ADR-0003's
+DNS-01 issuance); the in-cluster hop to the nginx front-door Service is
+plaintext HTTP on port 80 (chart's `expose.type: clusterIP` with
+`tls.enabled: false`). Chart-bundled internal TLS between Harbor
+components is left off — the in-cluster hop is on the pod network,
+where mTLS-by-default would add cert-churn for no threat model gain at
+homelab scale.
+
+### Harbor vs. Artifact Registry split
+
+Two registry surfaces in the homelab, on purpose: Harbor is the
+LAN-only / self-hosted surface (operator audience, `lab` Gateway,
+`docker login` from a LAN device, durable home for the homelab's own
+built artifacts); the Artifact Registry `projects` repo (ADR-0006,
+#139) is the public / preview surface (public audience, Cloudflare
+Tunnel → `projects` Gateway, keyless WIF push from ARC workflows,
+preview-environment images). The two never share an image or a
+credential. The full audience/reach/front-door/cert-chain split table
+lives in `kubernetes/apps/harbor/README.md`; the AR side is defined in
+CONTEXT.md → `projects` (Artifact Registry repository) and its
+companion entries. The split mirrors the `lab`/`projects` distinction
+on every axis worth tracking — see CONTEXT.md → `projects.jackhall.dev`
+for that table.
+
 ## Observability
 
 ### `observability` (namespace)

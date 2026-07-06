@@ -486,6 +486,52 @@ resource "google_secret_manager_secret" "healthchecks_watchdog_url" {
   depends_on = [google_project_service.enabled]
 }
 
+# Harbor admin password for kubernetes/apps/harbor/ (#221). Harbor ships
+# LAN-only at harbor.lab.jackhall.dev as the homelab's self-hosted OCI
+# registry + Helm chart host, distinct from the GCP Artifact Registry
+# `projects` repo (ADR-0006, the public/preview push path). Harbor is
+# the LAN home for artifacts the homelab builds and keeps on its own
+# infrastructure — decoupling them from GCP.
+#
+# Container only (same pattern as grafana-admin-password above): the
+# plaintext password is uploaded out of band by the operator so the
+# secret never round-trips through TF state or Git. The Harbor chart's
+# `existingSecretAdminPassword` knob references the K8s Secret's
+# `HARBOR_ADMIN_PASSWORD` key, which ESO syncs from this container via
+# the `harbor-admin-password` ExternalSecret in
+# kubernetes/apps/harbor/manifests/. Until the operator uploads a
+# version, ESO reports `SecretSyncedError` and the Harbor core pod
+# fails to find the credential — Argo reports `Degraded` rather than
+# silently masking the gap, same fail-loud shape as Grafana.
+#
+# Upload (after `tofu apply` here):
+#
+#   echo -n '<harbor-admin-password>' \
+#     | gcloud secrets versions add harbor-admin-password \
+#         --project rockingham-homelab --data-file=-
+#
+# Rotation: re-upload a new version with the same command. ESO's next
+# refresh (1h) propagates it; Harbor picks the new credential up on its
+# next core pod restart — kick with
+# `kubectl -n harbor rollout restart deploy harbor-core` to apply
+# immediately.
+resource "google_secret_manager_secret" "harbor_admin_password" {
+  project   = google_project.lab.project_id
+  secret_id = "harbor-admin-password"
+
+  labels = {
+    purpose  = "addon-credential"
+    addon    = "harbor"
+    rotation = "manual"
+  }
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
 # --- CI: Workload Identity Federation for GitHub Actions ---------------------
 #
 # The terraform-plan workflow (.github/workflows/terraform-plan.yml) runs on

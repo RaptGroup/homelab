@@ -1,0 +1,71 @@
+# harbor.lab.jackhall.dev → Harbor front-door Service (chart-rendered
+# `harbor` ClusterIP Service in this namespace). Attaches cross-namespace
+# to the central `lab` Cilium Gateway in gateway-system (#48); TLS
+# terminates there with the wildcard cert (ADR-0003's
+# *.lab.jackhall.dev DNS-01 issuance). The hop into the nginx pod is
+# plaintext on port 80, matching every other addon's HTTPRoute in this
+# repo (the chart's front-door Service is `expose.type: clusterIP` with
+# `tls.enabled: false` — only the HTTP port is exposed).
+#
+# No LB-pool address consumed: the front-door Service is ClusterIP, not
+# LoadBalancer, so Cilium's LB IPAM never sees it. The route rides the
+# existing `.201` lab Gateway VIP that AdGuard seeds for the whole
+# `*.lab.jackhall.dev` surface (#48, ADR-0002). lint-apps treats
+# ClusterIP-services-on-shared-Gateways as the only `lbipam.cilium.io/ips`
+# pin-skip — this is exactly that shape (no `type: LoadBalancer` Service,
+# no `from: Selector` Gateway emitted by this app), so no pin is
+# required and none is set.
+#
+# No backend ReferenceGrant: the HTTPRoute and the Harbor front-door
+# Service both live in `harbor`. The Gateway's
+# `allowedRoutes.namespaces.from: All` already covers cross-namespace
+# attachment to gateway-system, so no per-route grant is needed there
+# either.
+#
+# Carries the gethomepage.dev/* annotations Homepage (#26) discovers
+# via `kubernetes.gateway: true` — same convention as every other
+# lab-Gateway HTTPRoute in this repo (adguard-home, argocd, hubble-ui,
+# longhorn, grafana). No `gethomepage.dev/app` status-discovery
+# override: the route is `harbor`, the chart's front-door Service is
+# `harbor`, and the rendered pods carry `app.kubernetes.io/name:
+# harbor`, so Homepage's default pod lookup matches (same shape as
+# grafana). No widget block either — the Harbor admin login gates any
+# API surface, and a status pill without details is enough for a
+# dashboard card.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: harbor
+  namespace: harbor
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Harbor
+    gethomepage.dev/description: Self-hosted OCI + Helm registry
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: harbor.png
+    gethomepage.dev/href: https://harbor.lab.jackhall.dev
+spec:
+  # Spell out the Gateway API admission-webhook defaults (parentRef
+  # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`
+  # match) so Argo's strict diff doesn't flag the server-filled fields
+  # as drift on every reconcile — same fix-pattern as every other
+  # HTTPRoute in this repo (#29, #33).
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: gateway-system
+      name: lab
+      sectionName: https
+  hostnames:
+    - harbor.lab.jackhall.dev
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: harbor
+          port: 80
+          weight: 1
