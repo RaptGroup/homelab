@@ -21,11 +21,29 @@
 # `allowedRoutes.namespaces.from: All` already covers cross-namespace
 # attachment to gateway-system, so no per-route grant is needed there
 # either.
+#
+# Carries the gethomepage.dev/* annotations Homepage (#26) discovers
+# via `kubernetes.gateway: true` — same convention as every other
+# lab-Gateway HTTPRoute in this repo (adguard-home, argocd, hubble-ui,
+# longhorn, grafana). No `gethomepage.dev/app` status-discovery
+# override: the route is `harbor`, the chart's front-door Service is
+# `harbor`, and the rendered pods carry `app.kubernetes.io/name:
+# harbor`, so Homepage's default pod lookup matches (same shape as
+# grafana). No widget block either — the Harbor admin login gates any
+# API surface, and a status pill without details is enough for a
+# dashboard card.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: harbor
   namespace: harbor
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Harbor
+    gethomepage.dev/description: Self-hosted OCI + Helm registry
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: harbor.png
+    gethomepage.dev/href: https://harbor.lab.jackhall.dev
 spec:
   # Spell out the Gateway API admission-webhook defaults (parentRef
   # group/kind, backendRef group/kind/weight, implicit PathPrefix `/`

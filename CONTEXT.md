@@ -324,28 +324,19 @@ homelab scale.
 
 ### Harbor vs. Artifact Registry split
 
-Two registry surfaces in the homelab, on purpose:
-
-- **Harbor** (`harbor.lab.jackhall.dev`) — the **LAN-only / self-hosted**
-  surface. Operator audience, reached via the `lab` Gateway, pushes go
-  via `docker login` from a LAN device. Holds artifacts the homelab
-  builds and wants to keep on its own infra, decoupling them from GCP.
-  Admin password via ESO from the `harbor-admin-password` GSM container
-  (same pattern as `grafana-admin-password`); the admin password is
-  uploaded by the operator out of band.
-- **Artifact Registry `projects` repo** (ADR-0006, #139) — the
-  **public / preview** surface. Public audience, reached via
-  Cloudflare Tunnel → the `projects` Gateway, pushes go keyless from
-  ARC workflows via `tf-ci-arc-push` (WIF). Holds preview-environment
-  images.
-
-The two never share an image or a credential. Harbor is *not* the
-public/preview push path — keeping those artifacts on GCP (with its
-keyless WIF push and Cloudflare-Tunnel reach) is ADR-0006's design.
-Harbor is the durable LAN home for the homelab's own built artifacts.
-The split mirrors the `lab`/`projects` distinction on every axis worth
-tracking (audience, reach, front door, cert chain) — see CONTEXT.md →
-`projects.jackhall.dev` for that table.
+Two registry surfaces in the homelab, on purpose: Harbor is the
+LAN-only / self-hosted surface (operator audience, `lab` Gateway,
+`docker login` from a LAN device, durable home for the homelab's own
+built artifacts); the Artifact Registry `projects` repo (ADR-0006,
+#139) is the public / preview surface (public audience, Cloudflare
+Tunnel → `projects` Gateway, keyless WIF push from ARC workflows,
+preview-environment images). The two never share an image or a
+credential. The full audience/reach/front-door/cert-chain split table
+lives in `kubernetes/apps/harbor/README.md`; the AR side is defined in
+CONTEXT.md → `projects` (Artifact Registry repository) and its
+companion entries. The split mirrors the `lab`/`projects` distinction
+on every axis worth tracking — see CONTEXT.md → `projects.jackhall.dev`
+for that table.
 
 ## Observability
 

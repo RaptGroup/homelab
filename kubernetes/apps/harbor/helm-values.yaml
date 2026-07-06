@@ -19,14 +19,13 @@ expose:
     # TLS terminates at the lab Gateway; in-cluster hop is cleartext.
     # Disabling it here is what stops the chart from rendering the
     # nginx HTTPS port on the ClusterIP Service and from minting a
-    # self-signed cert for in-cluster TLS ( Harbor's internalTLS below
+    # self-signed cert for in-cluster TLS (Harbor's internalTLS below
     # is the inter-component story, kept default off).
     enabled: false
   clusterIP:
     name: harbor
     ports:
       httpPort: 80
-      httpsPort: 443
     annotations: {}
 
 # Used to populate the docker/helm commands shown on the portal and the
@@ -58,7 +57,7 @@ existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
 # ADR-0005: Harbor is heavier than a typical addon — it bundles
 # PostgreSQL, Redis, and Trivy alongside core/registry/jobservice/portal
 # — but each piece's state is singleton, valuable, and must survive node
-# drain (registry blobs, Trivy's vulnerability DB, the Harbordatabase).
+# drain (registry blobs, Trivy's vulnerability DB, the Harbor database).
 # local-path (the cluster default) would tie each component's data to
 # whatever node the pod first landed on. Longhorn is the named,
 # non-default StorageClass for exactly this category of workload.

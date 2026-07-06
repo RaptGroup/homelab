@@ -520,8 +520,9 @@ resource "google_secret_manager_secret" "harbor_admin_password" {
   secret_id = "harbor-admin-password"
 
   labels = {
-    purpose = "addon-credential"
-    addon   = "harbor"
+    purpose  = "addon-credential"
+    addon    = "harbor"
+    rotation = "manual"
   }
 
   replication {
