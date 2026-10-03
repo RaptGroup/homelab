@@ -1,0 +1,13 @@
+# Talos ships flannel (CNI) and kube-proxy unless disabled; without this,
+# installing Cilium gives two data planes and two service NATs (ADR-0002
+# wants exactly one). The inline shape is retained because the generated
+# bases under `_out/` are legacy `v1alpha1`, and Talos rejects mixing it
+# with the typed `KubeFlannelCNIConfig` / `KubeProxyConfig` documents.
+# Applying config stops the manifests being advertised, but existing
+# cluster resources stay until `talosctl upgrade-k8s` prunes them.
+cluster:
+  network:
+    cni:
+      name: none
+  proxy:
+    disabled: true

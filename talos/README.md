@@ -94,8 +94,12 @@ mkdir -p talos/_out
 talosctl gen secrets -o talos/_out/secrets.yaml
 
 # 2. Generate base controlplane.yaml / worker.yaml / talosconfig.
+#    The Kubernetes pin keeps a regenerated base on the cluster's running
+#    version — the generator's default tracks the newest release and a
+#    regenerated config must never bump the cluster by itself.
 talosctl gen config rockingham https://192.168.1.240:6443 \
   --with-secrets talos/_out/secrets.yaml \
+  --kubernetes-version 1.36.0 \
   --output-dir talos/_out/
 
 # 3. Produce the per-node config for cp-01 by patching the base controlplane.
@@ -103,8 +107,12 @@ talosctl gen config rockingham https://192.168.1.240:6443 \
 #    anything they need to.
 talosctl machineconfig patch talos/_out/controlplane.yaml \
   --patch @talos/patches/cluster/filesystem-trim.yaml \
+  --patch @talos/patches/cluster/no-default-cni.yaml \
   --patch @talos/patches/nodes/cp-01.yaml \
   -o talos/_out/cp-01.yaml
+
+# Validate before the config goes anywhere near a node.
+talosctl validate --mode metal --strict --config talos/_out/cp-01.yaml
 ```
 
 Repeat step 3 for every node, using `talos/_out/worker.yaml` as the base
@@ -114,6 +122,17 @@ point the talosconfig at the control planes:
 ```sh
 export TALOSCONFIG=$PWD/talos/_out/talosconfig
 talosctl config endpoint 192.168.1.245 192.168.1.246 192.168.1.247
+```
+
+Applying a config that switches CNI or disables kube-proxy updates the
+manifests Talos advertises but does not remove resources already in the
+cluster. `talosctl upgrade-k8s` is the supported prune path from v1.13
+(it diffs against the `talos-bootstrap-manifests-inventory` ConfigMap) —
+review the plan with `--dry-run` first:
+
+```sh
+talosctl upgrade-k8s --dry-run --to <current-kubernetes-version>   # review
+talosctl upgrade-k8s --to <current-kubernetes-version>             # prune
 ```
 
 ## Applying to a node in maintenance mode

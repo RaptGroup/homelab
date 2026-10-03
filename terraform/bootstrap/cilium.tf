@@ -3,7 +3,9 @@
 # example) breaks node bring-up in confusing ways.
 locals {
   cilium_values = yamlencode({
-    # eBPF dataplane replaces kube-proxy entirely; Talos ships without one.
+    # eBPF dataplane replaces kube-proxy entirely. Talos ships kube-proxy
+    # (and flannel) by default; both are disabled in the machine config via
+    # talos/patches/cluster/no-default-cni.yaml.
     kubeProxyReplacement = true
 
     # KubePrism: every node exposes the kube API on localhost:7445, so pods
